@@ -1,0 +1,7 @@
+{
+  "name": "IQC Training Pro",
+  "description": "Hệ thống xác nhận đào tạo online cho nhân viên IQC. Hỗ trợ ký xác nhận điện tử và quản lý khóa học chuyên nghiệp.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
