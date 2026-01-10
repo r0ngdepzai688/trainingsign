@@ -10,7 +10,7 @@ export enum Company {
 }
 
 export interface User {
-  id: string; // 8-digit ID
+  id: string; // Mã nhân viên 8 số
   name: string;
   part: string;
   group: string;
@@ -43,7 +43,7 @@ export interface Course {
   content: string;
   target: Company;
   isEnabled: boolean; // ON/OFF
-  attendance: AttendanceRecord[]; // Snapshot of users and their progress
+  attendance: AttendanceRecord[];
 }
 
 export interface Confirmation {

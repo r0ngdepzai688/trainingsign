@@ -2,22 +2,12 @@
 import React from 'react';
 
 export const COLORS = {
-  primary: '#0F172A', // Slate 900
-  secondary: '#3B82F6', // Blue 500
-  accent: '#F59E0B', // Amber 500
-  success: '#10B981', // Emerald 500
-  danger: '#EF4444', // Red 500
+  primary: '#0F172A',
+  secondary: '#3B82F6',
+  accent: '#F59E0B',
+  success: '#10B981',
+  danger: '#EF4444',
 };
-
-export const PARTS = [
-  "IQC G",
-  "IQC 1P",
-  "IQC 2P",
-  "IQC 3P",
-  "Injection Innovation Support T/F"
-];
-
-export const GROUPS = ["Group A", "Group B", "Group C", "Office"];
 
 export const DEFAULT_PASSWORD = "@iqc6368";
 
