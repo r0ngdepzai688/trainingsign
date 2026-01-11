@@ -29,8 +29,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const getCourseStatus = (course: Course) => {
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
     const start = new Date(course.start);
+    start.setHours(0, 0, 0, 0);
     const end = new Date(course.end);
+    end.setHours(0, 0, 0, 0);
+    
     const isCompleted = course.attendance.length > 0 && 
       course.attendance.every(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== ''));
 
@@ -39,6 +43,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return isCompleted ? CourseStatus.CLOSED : CourseStatus.PENDING;
     }
     return CourseStatus.OPENING;
+  };
+
+  const getStatusColor = (status: CourseStatus) => {
+    switch (status) {
+      case CourseStatus.PLAN: return 'text-slate-400 bg-slate-100';
+      case CourseStatus.OPENING: return 'text-blue-600 bg-blue-50';
+      case CourseStatus.PENDING: return 'text-amber-600 bg-amber-50';
+      case CourseStatus.CLOSED: return 'text-emerald-600 bg-emerald-50';
+      default: return 'text-slate-400 bg-slate-50';
+    }
   };
 
   // Hàm đếm số người chưa ký theo Group/Part (G, 1P, 2P, 3P, TF)
@@ -137,23 +151,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           />
         )}
 
-        {/* TAB 2: ACTING (THEO THIẾT KẾ ẢNH MẪU) */}
+        {/* TAB 2: ACTING */}
         {activeTab === 'acting' && (
           <div className="space-y-8">
             {/* Section SAMSUNG (SEV) */}
             <div className="space-y-4">
               <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">SAMSUNG (SEV)</h3>
-              <div className="bg-white rounded-[2rem] shadow-sm border border-blue-50/50 overflow-hidden">
+              <div className="bg-white rounded-[2rem] shadow-sm border border-blue-50/50 overflow-x-auto">
                 <table className="w-full text-[10px]">
                   <thead className="bg-[#FBFDFF] text-slate-400 uppercase font-black border-b border-blue-50">
                     <tr>
                       <th className="p-4 text-left w-12">NO</th>
-                      <th className="p-4 text-left">NAME</th>
+                      <th className="p-4 text-left min-w-[150px]">NAME</th>
+                      <th className="p-4 text-center">START</th>
+                      <th className="p-4 text-center">END</th>
                       <th className="p-4 text-center">G</th>
                       <th className="p-4 text-center">1P</th>
                       <th className="p-4 text-center">2P</th>
                       <th className="p-4 text-center">3P</th>
                       <th className="p-4 text-center">TF</th>
+                      <th className="p-4 text-center">STATUS</th>
                       <th className="p-4 text-center">ACTION</th>
                     </tr>
                   </thead>
@@ -166,11 +183,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {c.name}
                           </button>
                         </td>
+                        <td className="p-4 text-center whitespace-nowrap font-bold text-slate-500">{c.start}</td>
+                        <td className="p-4 text-center whitespace-nowrap font-bold text-slate-500">{c.end}</td>
                         <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, 'G')}</td>
                         <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, '1P')}</td>
                         <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, '2P')}</td>
                         <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, '3P')}</td>
                         <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, 'TF')}</td>
+                        <td className="p-4 text-center">
+                          <span className={`px-2 py-1 rounded-lg font-black text-[8px] uppercase ${getStatusColor(getCourseStatus(c))}`}>
+                            {getCourseStatus(c)}
+                          </span>
+                        </td>
                         <td className="p-4">
                           <div className="flex items-center justify-center gap-2">
                             <button onClick={() => handleExportExcel(c)} title="Xuất báo cáo" className="text-emerald-500 p-1.5 hover:bg-emerald-50 rounded-lg transition-colors">{ICONS.FileText}</button>
@@ -181,7 +205,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </tr>
                     ))}
                     {activeCourses.filter(c => c.target === Company.SAMSUG).length === 0 && (
-                      <tr><td colSpan={8} className="p-12 text-center text-slate-300 font-bold italic">Chưa có dữ liệu đào tạo SEV</td></tr>
+                      <tr><td colSpan={11} className="p-12 text-center text-slate-300 font-bold italic">Chưa có dữ liệu đào tạo SEV</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -196,7 +220,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* Exception Handling (Giữ lại tính năng nhập lý do) */}
+            {/* Exception Handling */}
             <div className="bg-white p-6 rounded-[2.5rem] border border-blue-50 shadow-sm">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Xử lý lý do ngoại lệ</h4>
               <div className="bg-slate-50 rounded-2xl p-4 flex items-center mb-4 border border-blue-50/50">
