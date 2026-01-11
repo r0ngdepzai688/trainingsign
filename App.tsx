@@ -38,10 +38,53 @@ const App: React.FC = () => {
 
   const handleRegister = (newUser: User) => {
     if (users.some(u => u.id === newUser.id)) return alert("ID này đã tồn tại!");
-    setUsers(prev => [...prev, newUser]);
-    setCourses(prev => prev.map(c => c.target === newUser.company ? {...c, attendance: [...c.attendance, {userId: newUser.id, status:'Pending'}]} : c));
+    const updatedUsers = [...users, newUser];
+    setUsers(updatedUsers);
+    
+    // Khi user mới đăng ký, tự động gán vào các khóa học hiện có của công ty đó
+    setCourses(prev => prev.map(c => {
+      if (c.target === newUser.company && !c.attendance.some(a => a.userId === newUser.id)) {
+        return { ...c, attendance: [...c.attendance, { userId: newUser.id, status: 'Pending' }] };
+      }
+      return c;
+    }));
     alert("Đăng ký thành công!");
   };
+
+  const handleCreateCourse = (newCourse: Course) => {
+    // Logic gán khóa học cho tất cả User hiện tại
+    const targetUsers = users.filter(u => u.company === newCourse.target);
+    const initialAttendance: AttendanceRecord[] = targetUsers.map(u => ({
+      userId: u.id,
+      status: 'Pending'
+    }));
+
+    const courseWithAttendance = { ...newCourse, attendance: initialAttendance };
+    setCourses(prev => [...prev.filter(x => x.id !== courseWithAttendance.id), courseWithAttendance]);
+    alert("Khóa học đã được tạo và gán cho toàn bộ nhân viên liên quan!");
+  };
+
+  const handleUpdateCourse = (updatedCourse: Course) => {
+    setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
+  };
+
+  // Đồng bộ hóa trạng thái ký từ confirmations vào courses.attendance
+  useEffect(() => {
+    if (confirmations.length > 0) {
+      setCourses(prev => prev.map(course => {
+        let changed = false;
+        const newAttendance = course.attendance.map(att => {
+          const conf = confirmations.find(c => c.courseId === course.id && c.userId === att.userId);
+          if (conf && att.status === 'Pending') {
+            changed = true;
+            return { ...att, status: 'Signed' as const, timestamp: conf.timestamp, signature: conf.signature };
+          }
+          return att;
+        });
+        return changed ? { ...course, attendance: newAttendance } : course;
+      }));
+    }
+  }, [confirmations]);
 
   return (
     <div className="min-h-screen max-w-lg mx-auto bg-white shadow-2xl flex flex-col">
@@ -52,8 +95,8 @@ const App: React.FC = () => {
           user={currentUser} users={users} setUsers={setUsers} 
           courses={courses} confirmations={confirmations}
           onLogout={() => setCurrentUser(null)} 
-          onCreateCourse={(c) => setCourses(prev => [...prev.filter(x => x.id !== c.id), c])}
-          onUpdateCourse={(c) => setCourses(prev => prev.map(x => x.id === c.id ? c : x))}
+          onCreateCourse={handleCreateCourse}
+          onUpdateCourse={handleUpdateCourse}
           onDeleteCourse={(id) => setCourses(prev => prev.filter(c => c.id !== id))}
           onToggleStatus={(id) => setCourses(prev => prev.map(c => c.id === id ? {...c, isEnabled: !c.isEnabled} : c))}
         />
