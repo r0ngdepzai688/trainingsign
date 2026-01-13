@@ -42,13 +42,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const startDate = new Date(course.start);
+    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(course.end);
+    endDate.setHours(0, 0, 0, 0);
+
+    // ƯU TIÊN 1: Kiểm tra xem đã hoàn thành 100% chưa
     const isCompleted = course.attendance.length > 0 && 
       course.attendance.every(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== ''));
 
-    if (now < startDate) return CourseStatus.PLAN;
-    if (isCompleted || now > endDate) return isCompleted ? CourseStatus.CLOSED : CourseStatus.PENDING;
-    return CourseStatus.OPENING;
+    if (isCompleted) return CourseStatus.CLOSED; // Trạng thái Finished (Xanh lá)
+
+    // ƯU TIÊN 2: Kiểm tra theo thời gian nếu chưa hoàn thành
+    if (now < startDate) return CourseStatus.PLAN; // Xám
+    if (now > endDate) return CourseStatus.PENDING; // Đỏ
+    return CourseStatus.OPENING; // Cam nhấp nháy
   };
 
   const getCompletionStats = (course: Course) => {
@@ -58,73 +65,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return { percent: Math.round((signed / total) * 100), signed, total };
   };
 
-  // CẬP NHẬT: Hàm thống kê chỉ dựa trên cột Part
   const getPendingCountByGroup = (course: Course, groupKey: string) => {
     return course.attendance.filter(a => {
-      // Chỉ đếm những người chưa ký và chưa có lý do ngoại lệ
       if (a.status !== 'Pending' || (a.reason && a.reason.trim() !== '')) return false;
-      
       const u = users.find(usr => usr.id === a.userId);
       if (!u) return false;
-      
       const p = u.part.toUpperCase();
-      
-      // Logic phân loại CHỈ dựa trên cột PART
       switch(groupKey) {
-        case 'G': 
-          // Kiểm tra xem part có chứa chữ G (như IQC G, G, Group G) nhưng không phải các part khác
-          return p.includes(' G') || p.endsWith('G') || p === 'G';
-        case '1P': 
-          return p.includes('1P');
-        case '2P': 
-          return p.includes('2P');
-        case '3P': 
-          return p.includes('3P');
-        case 'TF': 
-          return p.includes('TF');
-        default: 
-          return false;
+        case 'G': return p.includes(' G') || p.endsWith('G') || p === 'G';
+        case '1P': return p.includes('1P');
+        case '2P': return p.includes('2P');
+        case '3P': return p.includes('3P');
+        case 'TF': return p.includes('TF');
+        default: return false;
       }
     }).length;
   };
 
-  const filteredPendingList = useMemo(() => {
-    if (!pendingSearch.trim()) return [];
-    const results: {course: Course, att: AttendanceRecord, usr: User | undefined}[] = [];
-    courses.forEach(course => {
-      if (getCourseStatus(course) !== CourseStatus.CLOSED) {
-        course.attendance.forEach(att => {
-          if (att.status === 'Pending') {
-            const usr = users.find(u => u.id === att.userId);
-            if (usr && (usr.name.toLowerCase().includes(pendingSearch.toLowerCase()) || usr.id.includes(pendingSearch))) {
-              results.push({ course, att, usr });
-            }
-          }
-        });
-      }
-    });
-    return results;
-  }, [courses, users, pendingSearch]);
+  const formatDateShort = (dateStr: string) => {
+    if (!dateStr) return '--/--';
+    const d = new Date(dateStr);
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
 
-  const updateReason = (courseId: string, userId: string, reason: string) => {
-    const targetCourse = courses.find(c => c.id === courseId);
-    if (!targetCourse) return;
-    onUpdateCourse({
-      ...targetCourse,
-      attendance: targetCourse.attendance.map(a => a.userId === userId ? { ...a, reason } : a)
-    });
-    showToast("Đã lưu lý do ngoại lệ");
+  const StatusDot = ({ status }: { status: CourseStatus }) => {
+    switch (status) {
+      case CourseStatus.PLAN: 
+        return <div className="w-2.5 h-2.5 rounded-full bg-slate-300 shadow-sm" title="Sắp diễn ra" />;
+      case CourseStatus.PENDING: 
+        return <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]" title="Quá hạn" />;
+      case CourseStatus.OPENING: 
+        return <div className="w-2.5 h-2.5 rounded-full bg-orange-400 shadow-[0_0_10px_rgba(251,146,60,0.6)] animate-pulse" title="Đang mở" />;
+      case CourseStatus.CLOSED: 
+        return <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" title="Đã hoàn thành" />;
+      default: return null;
+    }
   };
 
   const handleExportExcel = (course: Course) => {
     const wb = XLSX.utils.book_new();
     const attendanceData = course.attendance.map((a, i) => {
       const u = users.find(usr => usr.id === a.userId);
-      return { 'STT': i+1, 'Họ tên': u?.name, 'Mã NV': u?.id, 'Bộ phận': u?.part, 'Trạng thái': a.status, 'Lý do': a.reason || '' };
+      return { 'STT': i+1, 'Họ tên': u?.name, 'Mã NV': u?.id, 'Bộ phận': u?.part, 'Trạng thái': a.status === 'Signed' ? 'Đã ký' : (a.reason ? 'Ngoại lệ' : 'Chưa ký'), 'Lý do': a.reason || '', 'Thời gian': a.timestamp || '' };
     });
     const ws = XLSX.utils.json_to_sheet(attendanceData);
-    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-    XLSX.writeFile(wb, `${course.name}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "BaoCaoDaoTao");
+    XLSX.writeFile(wb, `Bao_cao_${course.name}_${new Date().getTime()}.xlsx`);
+    showToast("Đã tải xuống báo cáo!");
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,6 +152,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const activeCourses = courses.filter(c => [CourseStatus.PLAN, CourseStatus.OPENING, CourseStatus.PENDING].includes(getCourseStatus(c)));
+  const finishedCourses = courses.filter(c => getCourseStatus(c) === CourseStatus.CLOSED);
+
+  const filteredPendingList = useMemo(() => {
+    if (!pendingSearch.trim()) return [];
+    const results: {course: Course, att: AttendanceRecord, usr: User | undefined}[] = [];
+    courses.forEach(course => {
+      if (getCourseStatus(course) !== CourseStatus.CLOSED) {
+        course.attendance.forEach(att => {
+          if (att.status === 'Pending') {
+            const usr = users.find(u => u.id === att.userId);
+            if (usr && (usr.name.toLowerCase().includes(pendingSearch.toLowerCase()) || usr.id.includes(pendingSearch))) {
+              results.push({ course, att, usr });
+            }
+          }
+        });
+      }
+    });
+    return results;
+  }, [courses, users, pendingSearch]);
+
+  const updateReason = (courseId: string, userId: string, reason: string) => {
+    const targetCourse = courses.find(c => c.id === courseId);
+    if (!targetCourse) return;
+    onUpdateCourse({
+      ...targetCourse,
+      attendance: targetCourse.attendance.map(a => a.userId === userId ? { ...a, reason } : a)
+    });
+    showToast("Đã lưu lý do ngoại lệ");
+  };
 
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#F8FAFF] font-['Plus_Jakarta_Sans']">
@@ -218,7 +234,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'acting' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500">
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-white flex flex-col justify-between h-32">
+              <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-white flex flex-col justify-between h-32 hover:shadow-lg transition-shadow">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tỉ lệ trung bình</span>
                 <div className="flex items-end justify-between">
                   <span className="text-3xl font-black text-slate-800">
@@ -229,7 +245,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="w-8 h-8 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center">{ICONS.Check}</div>
                 </div>
               </div>
-              <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-white flex flex-col justify-between h-32">
+              <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-white flex flex-col justify-between h-32 hover:shadow-lg transition-shadow">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Đang triển khai</span>
                 <div className="flex items-end justify-between">
                   <span className="text-3xl font-black text-slate-800">{activeCourses.length}</span>
@@ -245,23 +261,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <table className="w-full text-[11px]">
                     <thead className="bg-slate-50/50 text-slate-400 uppercase font-black border-b border-slate-100">
                       <tr>
-                        <th className="p-5 text-left w-12 opacity-50">#</th>
+                        <th className="p-5 text-center w-8">ST</th>
                         <th className="p-5 text-left min-w-[200px]">KHÓA ĐÀO TẠO & TIẾN ĐỘ</th>
+                        <th className="p-5 text-center min-w-[100px]">THỜI GIAN</th>
                         <th className="p-5 text-center bg-blue-50/20">G</th>
                         <th className="p-5 text-center bg-blue-50/20">1P</th>
                         <th className="p-5 text-center bg-blue-50/20">2P</th>
                         <th className="p-5 text-center bg-blue-50/20">3P</th>
                         <th className="p-5 text-center bg-blue-50/20">TF</th>
-                        <th className="p-5 text-center">ACTION</th>
+                        <th className="p-5 text-center">XỬ LÝ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {activeCourses.filter(c => c.target === Company.SAMSUG).map((c, i) => {
                         const stats = getCompletionStats(c);
                         const progressColor = stats.percent < 50 ? 'bg-red-500' : stats.percent < 80 ? 'bg-amber-500' : 'bg-emerald-500';
+                        const status = getCourseStatus(c);
                         return (
                           <tr key={c.id} className="hover:bg-slate-50/30 transition-all group">
-                            <td className="p-5 text-slate-300 font-bold">{i + 1}</td>
+                            <td className="p-5 text-center">
+                              <StatusDot status={status} />
+                            </td>
                             <td className="p-5">
                               <div className="flex flex-col gap-2">
                                 <button onClick={() => { setEditCourse(c); setActiveTab('create'); }} className="font-extrabold text-slate-700 text-left hover:text-blue-600 transition-colors leading-tight">
@@ -276,6 +296,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <div className="text-[9px] text-slate-300 font-bold uppercase tracking-wider">
                                   {stats.signed}/{stats.total} Nhân viên đã xác nhận
                                 </div>
+                              </div>
+                            </td>
+                            <td className="p-5 text-center">
+                              <div className="text-[10px] font-black text-slate-400 whitespace-nowrap bg-slate-50 px-3 py-1.5 rounded-full inline-block">
+                                {formatDateShort(c.start)} <span className="text-slate-200">|</span> {formatDateShort(c.end)}
                               </div>
                             </td>
                             <td className="p-5 text-center font-black text-red-500 text-xs bg-blue-50/5">{getPendingCountByGroup(c, 'G')}</td>
@@ -307,7 +332,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div className="bg-white p-6 rounded-[2.5rem] border border-white shadow-xl shadow-slate-200/40">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-1">NHẬP LÝ DO NGOẠI LỆ (VẮNG THI / NGHỈ)</h4>
-              <div className="bg-slate-50 rounded-2xl p-4 flex items-center mb-4 border border-slate-100">
+              <div className="bg-slate-50 rounded-2xl p-4 flex items-center mb-4 border border-slate-100 focus-within:border-blue-200 transition-all">
                 <span className="text-slate-300 mr-4 ml-1">{ICONS.Search}</span>
                 <input type="text" className="bg-transparent text-sm w-full outline-none font-extrabold placeholder:text-slate-300" placeholder="Tìm ID hoặc Tên nhân viên chưa ký..." value={pendingSearch} onChange={e => setPendingSearch(e.target.value)} />
               </div>
@@ -329,6 +354,54 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     />
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'finished' && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-white shadow-xl shadow-slate-200/40">
+              <div className="flex items-center gap-5 mb-10">
+                <div className="w-14 h-14 bg-gradient-to-tr from-emerald-500 to-emerald-400 text-white rounded-[1.5rem] flex items-center justify-center shadow-lg shadow-emerald-100">{ICONS.Check}</div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-800 tracking-tight">Lịch sử Báo cáo</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5 opacity-70">Các chương trình đã hoàn thành xác nhận 100%</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {finishedCourses.length === 0 ? (
+                  <div className="text-center py-24 bg-slate-50/50 rounded-[3rem] border-2 border-dashed border-slate-100">
+                    <div className="mb-4 opacity-20 flex justify-center">{ICONS.FileText}</div>
+                    <p className="text-slate-400 font-black text-xs uppercase tracking-widest">Hiện chưa có khóa học hoàn thành</p>
+                  </div>
+                ) : (
+                  finishedCourses.map(c => {
+                    const stats = getCompletionStats(c);
+                    return (
+                      <div key={c.id} className="group p-6 bg-white rounded-[2rem] border border-slate-100 hover:border-emerald-200 hover:shadow-2xl hover:shadow-emerald-50 transition-all flex items-center gap-6">
+                        <div className="w-14 h-14 bg-slate-50 text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-500 rounded-2xl flex items-center justify-center transition-all">
+                          {ICONS.Pdf}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-black text-slate-800 text-lg leading-tight mb-2 group-hover:text-emerald-600 transition-colors">{c.name}</h4>
+                          <div className="flex items-center gap-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            <span className="bg-slate-50 px-2 py-1 rounded-lg">{formatDateShort(c.start)} - {formatDateShort(c.end)}</span>
+                            <span className="text-slate-200">•</span>
+                            <span className="text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg">100% HOÀN TẤT</span>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleExportExcel(c)}
+                          className="px-6 py-3.5 bg-slate-900 text-white text-[10px] font-black rounded-2xl hover:bg-emerald-600 transition-all shadow-xl shadow-slate-200 active:scale-95 flex items-center gap-2"
+                        >
+                          {ICONS.FileText} XUẤT BÁO CÁO
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
