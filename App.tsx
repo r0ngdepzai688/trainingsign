@@ -41,9 +41,9 @@ const App: React.FC = () => {
     const updatedUsers = [...users, newUser];
     setUsers(updatedUsers);
     
-    // Khi user mới đăng ký, tự động gán vào các khóa học hiện có của công ty đó
     setCourses(prev => prev.map(c => {
       if (c.target === newUser.company && !c.attendance.some(a => a.userId === newUser.id)) {
+        // Chỉ tự động gán nếu khóa học đó đang để chế độ "Toàn bộ" (logic này có thể mở rộng thêm field trong Course nếu cần)
         return { ...c, attendance: [...c.attendance, { userId: newUser.id, status: 'Pending' }] };
       }
       return c;
@@ -51,24 +51,40 @@ const App: React.FC = () => {
     alert("Đăng ký thành công!");
   };
 
-  const handleCreateCourse = (newCourse: Course) => {
-    // Logic gán khóa học cho tất cả User hiện tại
-    const targetUsers = users.filter(u => u.company === newCourse.target);
-    const initialAttendance: AttendanceRecord[] = targetUsers.map(u => ({
-      userId: u.id,
-      status: 'Pending'
-    }));
+  const handleCreateCourse = (newCourse: Course, specificUsers?: User[]) => {
+    let targetAttendance: AttendanceRecord[] = [];
+    
+    if (specificUsers && specificUsers.length > 0) {
+      // 1. Cập nhật danh sách users hệ thống nếu có user mới trong danh sách Excel
+      setUsers(prev => {
+        const existingIds = new Set(prev.map(u => u.id));
+        const newOnes = specificUsers.filter(u => !existingIds.has(u.id));
+        return [...prev, ...newOnes];
+      });
 
-    const courseWithAttendance = { ...newCourse, attendance: initialAttendance };
+      // 2. Gán attendance cho danh sách được chỉ định
+      targetAttendance = specificUsers.map(u => ({
+        userId: u.id,
+        status: 'Pending'
+      }));
+    } else {
+      // 3. Gán cho toàn bộ công ty (mặc định cũ)
+      const targetUsers = users.filter(u => u.company === newCourse.target);
+      targetAttendance = targetUsers.map(u => ({
+        userId: u.id,
+        status: 'Pending'
+      }));
+    }
+
+    const courseWithAttendance = { ...newCourse, attendance: targetAttendance };
     setCourses(prev => [...prev.filter(x => x.id !== courseWithAttendance.id), courseWithAttendance]);
-    alert("Khóa học đã được tạo và gán cho toàn bộ nhân viên liên quan!");
+    alert(specificUsers ? `Đã gán khóa học cho ${specificUsers.length} nhân sự theo danh sách!` : "Khóa học đã được gán cho toàn bộ nhân viên!");
   };
 
   const handleUpdateCourse = (updatedCourse: Course) => {
     setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
   };
 
-  // Đồng bộ hóa trạng thái ký từ confirmations vào courses.attendance
   useEffect(() => {
     if (confirmations.length > 0) {
       setCourses(prev => prev.map(course => {

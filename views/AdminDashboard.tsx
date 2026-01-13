@@ -11,7 +11,7 @@ interface AdminDashboardProps {
   courses: Course[];
   confirmations: Confirmation[];
   onLogout: () => void;
-  onCreateCourse: (c: Course) => void;
+  onCreateCourse: (c: Course, specificUsers?: User[]) => void;
   onUpdateCourse: (c: Course) => void;
   onDeleteCourse: (id: string) => void;
   onToggleStatus: (id: string) => void;
@@ -26,7 +26,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [userTab, setUserTab] = useState<'SEV' | 'Vendor'>('SEV');
   const [pendingSearch, setPendingSearch] = useState('');
   
-  // Custom Confirmation Modal States
   const [confirmModal, setConfirmModal] = useState<{ 
     isOpen: boolean; title: string; message: string; onConfirm: () => void; type: 'danger' | 'info' 
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'info' });
@@ -42,47 +41,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const getCourseStatus = (course: Course) => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    const start = new Date(course.start);
-    const end = new Date(course.end);
+    const startDate = new Date(course.start);
+    const endDate = new Date(course.end);
     const isCompleted = course.attendance.length > 0 && 
       course.attendance.every(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== ''));
 
-    if (now < start) return CourseStatus.PLAN;
-    if (isCompleted || now > end) return isCompleted ? CourseStatus.CLOSED : CourseStatus.PENDING;
+    if (now < startDate) return CourseStatus.PLAN;
+    if (isCompleted || now > endDate) return isCompleted ? CourseStatus.CLOSED : CourseStatus.PENDING;
     return CourseStatus.OPENING;
   };
 
-  // Tính toán tỷ lệ hoàn thành
   const getCompletionStats = (course: Course) => {
     const total = course.attendance.length;
     if (total === 0) return { percent: 0, signed: 0, total: 0 };
     const signed = course.attendance.filter(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== '')).length;
-    return {
-      percent: Math.round((signed / total) * 100),
-      signed,
-      total
-    };
+    return { percent: Math.round((signed / total) * 100), signed, total };
   };
 
+  // CẬP NHẬT: Hàm thống kê chỉ dựa trên cột Part
   const getPendingCountByGroup = (course: Course, groupKey: string) => {
     return course.attendance.filter(a => {
+      // Chỉ đếm những người chưa ký và chưa có lý do ngoại lệ
       if (a.status !== 'Pending' || (a.reason && a.reason.trim() !== '')) return false;
+      
       const u = users.find(usr => usr.id === a.userId);
       if (!u) return false;
+      
       const p = u.part.toUpperCase();
-      const g = u.group.toUpperCase();
+      
+      // Logic phân loại CHỈ dựa trên cột PART
       switch(groupKey) {
-        case 'G': return g.includes('G') || p === 'G';
-        case '1P': return p.includes('1P');
-        case '2P': return p.includes('2P');
-        case '3P': return p.includes('3P');
-        case 'TF': return p.includes('TF');
-        default: return false;
+        case 'G': 
+          // Kiểm tra xem part có chứa chữ G (như IQC G, G, Group G) nhưng không phải các part khác
+          return p.includes(' G') || p.endsWith('G') || p === 'G';
+        case '1P': 
+          return p.includes('1P');
+        case '2P': 
+          return p.includes('2P');
+        case '3P': 
+          return p.includes('3P');
+        case 'TF': 
+          return p.includes('TF');
+        default: 
+          return false;
       }
     }).length;
   };
 
-  // Logic nhập lý do ngoại lệ
   const filteredPendingList = useMemo(() => {
     if (!pendingSearch.trim()) return [];
     const results: {course: Course, att: AttendanceRecord, usr: User | undefined}[] = [];
@@ -163,14 +168,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#F8FAFF] font-['Plus_Jakarta_Sans']">
-      {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl font-black text-xs transition-all animate-in fade-in slide-in-from-top-4 ${toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
           {toast.message}
         </div>
       )}
 
-      {/* Custom Confirmation Modal */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setConfirmModal(prev => ({...prev, isOpen: false}))}></div>
@@ -188,7 +191,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Header */}
       <div className="bg-white/90 backdrop-blur-md border-b border-slate-100 p-5 flex justify-between items-center shrink-0 sticky top-0 z-50">
         <div className="flex items-center gap-4">
           <div className="w-11 h-11 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-[1.2rem] flex items-center justify-center text-white font-extrabold text-sm shadow-lg shadow-blue-100">IQC</div>
@@ -201,11 +203,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 pb-32">
-        {activeTab === 'create' && <CourseForm initialData={editCourse} onSubmit={(c) => { if (!editCourse) onCreateCourse(c); else onUpdateCourse(c); setEditCourse(null); setActiveTab('acting'); showToast("Dữ liệu đã được cập nhật"); }} />}
+        {activeTab === 'create' && (
+          <CourseForm 
+            initialData={editCourse} 
+            onSubmit={(c, list) => { 
+              if (!editCourse) onCreateCourse(c, list); 
+              else onUpdateCourse(c); 
+              setEditCourse(null); 
+              setActiveTab('acting'); 
+            }} 
+          />
+        )}
 
         {activeTab === 'acting' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500">
-            {/* KPI Overview Cards */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-white flex flex-col justify-between h-32">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tỉ lệ trung bình</span>
@@ -227,7 +238,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* Main Course Table with Progress */}
             <div className="space-y-4">
               <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.25em] ml-2">QUẢN LÝ TIẾN ĐỘ ĐÀO TẠO</h3>
               <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-white overflow-hidden">
@@ -295,7 +305,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* Exception Reason Management */}
             <div className="bg-white p-6 rounded-[2.5rem] border border-white shadow-xl shadow-slate-200/40">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-1">NHẬP LÝ DO NGOẠI LỆ (VẮNG THI / NGHỈ)</h4>
               <div className="bg-slate-50 rounded-2xl p-4 flex items-center mb-4 border border-slate-100">
@@ -307,7 +316,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="p-10 text-center text-slate-300 font-bold text-xs italic">Không tìm thấy dữ liệu phù hợp.</div>
                 )}
                 {filteredPendingList.map(({course, att, usr}) => (
-                  <div key={`${course.id}-${att.userId}`} className="flex items-center justify-between p-3 bg-white rounded-2xl border border-slate-50 shadow-sm hover:border-blue-100 transition-all animate-in fade-in zoom-in-95">
+                  <div key={`${course.id}-${att.userId}`} className="flex items-center justify-between p-3 bg-white rounded-2xl border border-slate-50 shadow-sm hover:border-blue-100 transition-all">
                     <div className="flex-1 truncate mr-4">
                       <div className="font-extrabold text-xs text-slate-700">{usr?.name} <span className="text-blue-500 ml-1">#{usr?.id}</span></div>
                       <div className="text-[9px] text-slate-400 font-bold uppercase truncate">{course.name}</div>
@@ -384,7 +393,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
       </div>
 
-      {/* Bottom Navigation */}
       <div className="bg-white/80 backdrop-blur-xl border-t border-slate-100 px-8 py-5 shrink-0 flex justify-between items-center fixed bottom-0 left-0 right-0 max-w-lg mx-auto z-50 rounded-t-[3rem] shadow-[0_-15px_40px_-20px_rgba(0,0,0,0.1)]">
         <TabButton active={activeTab === 'create'} icon={ICONS.Plus} label="Tạo mới" onClick={() => { setEditCourse(null); setActiveTab('create'); }} />
         <TabButton active={activeTab === 'acting'} icon={ICONS.FileText} label="Tiến độ" onClick={() => setActiveTab('acting')} />
@@ -402,15 +410,56 @@ const TabButton: React.FC<{ active: boolean, icon: React.ReactNode, label: strin
   </button>
 );
 
-const CourseForm: React.FC<{ initialData: Course | null, onSubmit: (c: Course) => void }> = ({ initialData, onSubmit }) => {
+const CourseForm: React.FC<{ 
+  initialData: Course | null, 
+  onSubmit: (c: Course, specificUsers?: User[]) => void 
+}> = ({ initialData, onSubmit }) => {
   const [formData, setFormData] = useState<Course>(initialData || { id: 'c' + Date.now(), name: '', start: '', end: '', content: '', target: Company.SAMSUG, isEnabled: true, attendance: [] });
+  const [targetType, setTargetType] = useState<'all' | 'specific'>('all');
+  const [specificUsers, setSpecificUsers] = useState<User[]>([]);
+  const [importStatus, setImportStatus] = useState('');
+
+  const handleTargetExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet);
+        const getVal = (row: any, keys: string[]) => {
+          for (const key of keys) {
+            const foundKey = Object.keys(row).find(k => k.toLowerCase().trim() === key.toLowerCase().trim());
+            if (foundKey) return row[foundKey];
+          }
+          return '';
+        };
+        const list = jsonData.map((row: any) => ({
+          id: String(getVal(row, ['id', 'mã nhân viên', 'ma nhan vien', 'mnv', 'staff id']) || '').trim().padStart(8, '0'),
+          name: String(getVal(row, ['name', 'họ và tên', 'ho va ten', 'họ tên', 'tên']) || 'Nhân viên mới').trim(),
+          part: String(getVal(row, ['part', 'bộ phận', 'dept']) || 'N/A').trim(),
+          group: String(getVal(row, ['group', 'nhóm', 'team']) || 'N/A').trim(),
+          role: Role.USER, password: DEFAULT_PASSWORD, company: formData.target
+        })).filter(u => u.id && u.id !== '00000000');
+        
+        setSpecificUsers(list);
+        setImportStatus(`Đã nhận ${list.length} nhân sự`);
+      } catch (err) { setImportStatus('Lỗi file!'); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   return (
-    <div className="bg-white rounded-[3rem] p-8 shadow-2xl shadow-slate-200 border border-white space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+    <div className="bg-white rounded-[3rem] p-8 shadow-2xl shadow-slate-200 border border-white space-y-6 animate-in slide-in-from-bottom-4 duration-300 pb-12">
       <h4 className="font-extrabold text-slate-800 text-2xl tracking-tighter uppercase">{initialData ? 'Cập nhật đào tạo' : 'Khởi tạo khóa học'}</h4>
+      
       <div className="space-y-2">
         <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Tên chương trình</label>
         <input type="text" className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm outline-none font-extrabold border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all" placeholder="Ví dụ: Đào tạo chất lượng công đoạn 1P..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
       </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest mb-1 block">Bắt đầu</label>
@@ -421,11 +470,45 @@ const CourseForm: React.FC<{ initialData: Course | null, onSubmit: (c: Course) =
           <input type="date" className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm font-extrabold text-slate-600 border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all" value={formData.end} onChange={e => setFormData({...formData, end: e.target.value})} />
         </div>
       </div>
+
+      <div className="space-y-3">
+        <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Đối tượng đào tạo</label>
+        <div className="flex bg-slate-100 p-1 rounded-2xl">
+          <button onClick={() => setTargetType('all')} className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all ${targetType === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>TOÀN BỘ CÔNG TY</button>
+          <button onClick={() => setTargetType('specific')} className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all ${targetType === 'specific' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>DANH SÁCH EXCEL</button>
+        </div>
+
+        {targetType === 'specific' && (
+          <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 border-dashed animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-blue-600 uppercase">{importStatus || 'Chưa có danh sách'}</span>
+              <label className="text-[10px] font-black text-white bg-blue-600 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-blue-700 active:scale-95 transition-all">
+                CHỌN FILE EXCEL
+                <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleTargetExcel} />
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="space-y-2">
         <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Nội dung cam kết</label>
-        <textarea rows={6} className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm font-extrabold text-slate-700 border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all resize-none" placeholder="Nhập chi tiết các điều khoản đào tạo..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
+        <textarea rows={4} className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm font-extrabold text-slate-700 border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all resize-none" placeholder="Nhập chi tiết các điều khoản đào tạo..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
       </div>
-      <button onClick={() => { if(!formData.name || !formData.start || !formData.end) return; onSubmit(formData); }} className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-extrabold text-sm uppercase shadow-2xl hover:bg-black active:scale-95 transition-all">Lưu & Triển Khai</button>
+
+      <button 
+        onClick={() => { 
+          if(!formData.name || !formData.start || !formData.end) return; 
+          if(targetType === 'specific' && specificUsers.length === 0) {
+            alert("Vui lòng tải lên danh sách Excel đối tượng đào tạo!");
+            return;
+          }
+          onSubmit(formData, targetType === 'specific' ? specificUsers : undefined); 
+        }} 
+        className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-extrabold text-sm uppercase shadow-2xl hover:bg-black active:scale-95 transition-all"
+      >
+        Lưu & Triển Khai
+      </button>
     </div>
   );
 };
