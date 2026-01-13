@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { User, Course, Confirmation, Role, Company, CourseStatus, AttendanceRecord } from '../types';
 import { ICONS, DEFAULT_PASSWORD } from '../constants';
 import * as XLSX from 'xlsx';
@@ -24,47 +24,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'create' | 'acting' | 'finished' | 'users'>('acting');
   const [editCourse, setEditCourse] = useState<Course | null>(null);
   const [userTab, setUserTab] = useState<'SEV' | 'Vendor'>('SEV');
-  const [userSearchTerm, setUserSearchTerm] = useState('');
   const [pendingSearch, setPendingSearch] = useState('');
+  
+  // Custom Confirmation Modal States
+  const [confirmModal, setConfirmModal] = useState<{ 
+    isOpen: boolean; title: string; message: string; onConfirm: () => void; type: 'danger' | 'info' 
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'info' });
+
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const getCourseStatus = (course: Course) => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const start = new Date(course.start);
-    start.setHours(0, 0, 0, 0);
     const end = new Date(course.end);
-    end.setHours(0, 0, 0, 0);
-    
     const isCompleted = course.attendance.length > 0 && 
       course.attendance.every(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== ''));
 
     if (now < start) return CourseStatus.PLAN;
-    if (isCompleted || now > end) {
-      return isCompleted ? CourseStatus.CLOSED : CourseStatus.PENDING;
-    }
+    if (isCompleted || now > end) return isCompleted ? CourseStatus.CLOSED : CourseStatus.PENDING;
     return CourseStatus.OPENING;
   };
 
-  const getStatusColor = (status: CourseStatus) => {
-    switch (status) {
-      case CourseStatus.PLAN: return 'text-slate-400 bg-slate-100';
-      case CourseStatus.OPENING: return 'text-blue-600 bg-blue-50';
-      case CourseStatus.PENDING: return 'text-amber-600 bg-amber-50';
-      case CourseStatus.CLOSED: return 'text-emerald-600 bg-emerald-50';
-      default: return 'text-slate-400 bg-slate-50';
-    }
+  // Tính toán tỷ lệ hoàn thành
+  const getCompletionStats = (course: Course) => {
+    const total = course.attendance.length;
+    if (total === 0) return { percent: 0, signed: 0, total: 0 };
+    const signed = course.attendance.filter(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== '')).length;
+    return {
+      percent: Math.round((signed / total) * 100),
+      signed,
+      total
+    };
   };
 
-  // Hàm đếm số người chưa ký theo Group/Part (G, 1P, 2P, 3P, TF)
   const getPendingCountByGroup = (course: Course, groupKey: string) => {
     return course.attendance.filter(a => {
-      if (a.status !== 'Pending') return false;
+      if (a.status !== 'Pending' || (a.reason && a.reason.trim() !== '')) return false;
       const u = users.find(usr => usr.id === a.userId);
       if (!u) return false;
-      
       const p = u.part.toUpperCase();
       const g = u.group.toUpperCase();
-
       switch(groupKey) {
         case 'G': return g.includes('G') || p === 'G';
         case '1P': return p.includes('1P');
@@ -76,27 +82,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }).length;
   };
 
-  const handleExportExcel = (course: Course) => {
-    const wb = XLSX.utils.book_new();
-    const attendanceData = course.attendance.map((a, i) => {
-      const u = users.find(usr => usr.id === a.userId);
-      return { 'No': i+1, 'Name': u?.name, 'ID': u?.id, 'Part': u?.part, 'Status': a.status, 'Reason': a.reason || '' };
-    });
-    const ws = XLSX.utils.json_to_sheet(attendanceData);
-    XLSX.utils.book_append_sheet(wb, ws, "Bao Cao");
-    XLSX.writeFile(wb, `${course.name}_BaoCao.xlsx`);
-  };
-
-  const updateReason = (courseId: string, userId: string, reason: string) => {
-    const targetCourse = courses.find(c => c.id === courseId);
-    if (!targetCourse) return;
-    const updatedCourse = {
-      ...targetCourse,
-      attendance: targetCourse.attendance.map(a => a.userId === userId ? { ...a, reason } : a)
-    };
-    onUpdateCourse(updatedCourse);
-  };
-
+  // Logic nhập lý do ngoại lệ
   const filteredPendingList = useMemo(() => {
     if (!pendingSearch.trim()) return [];
     const results: {course: Course, att: AttendanceRecord, usr: User | undefined}[] = [];
@@ -115,126 +101,223 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return results;
   }, [courses, users, pendingSearch]);
 
+  const updateReason = (courseId: string, userId: string, reason: string) => {
+    const targetCourse = courses.find(c => c.id === courseId);
+    if (!targetCourse) return;
+    onUpdateCourse({
+      ...targetCourse,
+      attendance: targetCourse.attendance.map(a => a.userId === userId ? { ...a, reason } : a)
+    });
+    showToast("Đã lưu lý do ngoại lệ");
+  };
+
+  const handleExportExcel = (course: Course) => {
+    const wb = XLSX.utils.book_new();
+    const attendanceData = course.attendance.map((a, i) => {
+      const u = users.find(usr => usr.id === a.userId);
+      return { 'STT': i+1, 'Họ tên': u?.name, 'Mã NV': u?.id, 'Bộ phận': u?.part, 'Trạng thái': a.status, 'Lý do': a.reason || '' };
+    });
+    const ws = XLSX.utils.json_to_sheet(attendanceData);
+    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+    XLSX.writeFile(wb, `${course.name}.xlsx`);
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet);
+        const getVal = (row: any, keys: string[]) => {
+          for (const key of keys) {
+            const foundKey = Object.keys(row).find(k => k.toLowerCase().trim() === key.toLowerCase().trim());
+            if (foundKey) return row[foundKey];
+          }
+          return '';
+        };
+        const imported = jsonData.map((row: any) => ({
+          id: String(getVal(row, ['id', 'mã nhân viên', 'ma nhan vien', 'mnv', 'staff id', 'id nv']) || '').trim().padStart(8, '0'),
+          name: String(getVal(row, ['name', 'họ và tên', 'ho va ten', 'họ tên', 'ho ten', 'tên', 'ten']) || '').trim(),
+          part: String(getVal(row, ['part', 'bộ phận', 'bo phan', 'dept']) || 'N/A').trim(),
+          group: String(getVal(row, ['group', 'nhóm', 'nhom', 'team']) || 'N/A').trim(),
+          role: Role.USER, password: DEFAULT_PASSWORD, company: userTab === 'SEV' ? Company.SAMSUG : Company.VENDOR
+        })).filter(u => u.id && u.id !== '00000000' && u.name);
+        if (imported.length === 0) return showToast("File không đúng định dạng!", "error");
+        setUsers(prev => {
+          const existingIds = new Set(prev.map(u => u.id));
+          const newOnes = imported.filter(i => !existingIds.has(i.id));
+          return [...prev, ...newOnes];
+        });
+        showToast(`Đã thêm ${imported.length} nhân sự mới`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (err) { showToast("Lỗi khi đọc file Excel!", "error"); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const activeCourses = courses.filter(c => [CourseStatus.PLAN, CourseStatus.OPENING, CourseStatus.PENDING].includes(getCourseStatus(c)));
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#F8FAFF]">
+    <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#F8FAFF] font-['Plus_Jakarta_Sans']">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl font-black text-xs transition-all animate-in fade-in slide-in-from-top-4 ${toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
+          {toast.message}
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setConfirmModal(prev => ({...prev, isOpen: false}))}></div>
+          <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full relative shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mb-6 mx-auto ${confirmModal.type === 'danger' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+              {confirmModal.type === 'danger' ? ICONS.Trash : ICONS.FileText}
+            </div>
+            <h3 className="text-xl font-black text-center text-slate-800">{confirmModal.title}</h3>
+            <p className="text-sm text-slate-400 text-center mt-2 font-bold leading-relaxed">{confirmModal.message}</p>
+            <div className="grid grid-cols-2 gap-3 mt-8">
+              <button onClick={() => setConfirmModal(prev => ({...prev, isOpen: false}))} className="py-4 rounded-2xl bg-slate-100 text-slate-500 font-black text-xs uppercase hover:bg-slate-200 transition-all">Quay lại</button>
+              <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(prev => ({...prev, isOpen: false})); }} className={`py-4 rounded-2xl text-white font-black text-xs uppercase shadow-lg transition-all ${confirmModal.type === 'danger' ? 'bg-red-500 hover:bg-red-600 shadow-red-100' : 'bg-blue-500 hover:bg-blue-600 shadow-blue-100'}`}>Xác nhận</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="bg-white border-b border-blue-50 p-4 flex justify-between items-center shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xs">IQC</div>
+      <div className="bg-white/90 backdrop-blur-md border-b border-slate-100 p-5 flex justify-between items-center shrink-0 sticky top-0 z-50">
+        <div className="flex items-center gap-4">
+          <div className="w-11 h-11 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-[1.2rem] flex items-center justify-center text-white font-extrabold text-sm shadow-lg shadow-blue-100">IQC</div>
           <div>
-            <h2 className="text-lg font-black text-slate-800 tracking-tight">Training Pro</h2>
-            <p className="text-[9px] text-blue-500 font-black uppercase tracking-widest">Admin Dashboard</p>
+            <h2 className="text-lg font-extrabold text-slate-800 tracking-tight leading-none">Training Pro</h2>
+            <p className="text-[10px] text-blue-500 font-extrabold uppercase tracking-widest mt-1.5 opacity-70">ADMIN SUITE</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right hidden sm:block">
-            <p className="text-xs font-black text-slate-700">{user.name}</p>
-            <p className="text-[9px] text-slate-400 font-bold uppercase">{user.group}</p>
-          </div>
-          <button onClick={onLogout} className="bg-slate-100 p-2.5 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">{ICONS.Power}</button>
-        </div>
+        <button onClick={onLogout} className="bg-slate-50 p-3 rounded-2xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all active:scale-90">{ICONS.Power}</button>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto p-4 pb-28">
-        
-        {/* TAB 1: CREATE */}
-        {activeTab === 'create' && (
-          <CourseForm 
-            initialData={editCourse} 
-            onSubmit={(c) => { 
-              if (!editCourse) onCreateCourse(c); else onUpdateCourse(c);
-              setEditCourse(null); setActiveTab('acting'); 
-            }} 
-          />
-        )}
+      <div className="flex-1 overflow-y-auto p-5 pb-32">
+        {activeTab === 'create' && <CourseForm initialData={editCourse} onSubmit={(c) => { if (!editCourse) onCreateCourse(c); else onUpdateCourse(c); setEditCourse(null); setActiveTab('acting'); showToast("Dữ liệu đã được cập nhật"); }} />}
 
-        {/* TAB 2: ACTING */}
         {activeTab === 'acting' && (
-          <div className="space-y-8">
-            {/* Section SAMSUNG (SEV) */}
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-3 duration-500">
+            {/* KPI Overview Cards */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-white flex flex-col justify-between h-32">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tỉ lệ trung bình</span>
+                <div className="flex items-end justify-between">
+                  <span className="text-3xl font-black text-slate-800">
+                    {activeCourses.length > 0 
+                      ? Math.round(activeCourses.reduce((acc, c) => acc + getCompletionStats(c).percent, 0) / activeCourses.length) 
+                      : 0}%
+                  </span>
+                  <div className="w-8 h-8 bg-emerald-50 text-emerald-500 rounded-xl flex items-center justify-center">{ICONS.Check}</div>
+                </div>
+              </div>
+              <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-white flex flex-col justify-between h-32">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Đang triển khai</span>
+                <div className="flex items-end justify-between">
+                  <span className="text-3xl font-black text-slate-800">{activeCourses.length}</span>
+                  <div className="w-8 h-8 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center">{ICONS.FileText}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Course Table with Progress */}
             <div className="space-y-4">
-              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">SAMSUNG (SEV)</h3>
-              <div className="bg-white rounded-[2rem] shadow-sm border border-blue-50/50 overflow-x-auto">
-                <table className="w-full text-[10px]">
-                  <thead className="bg-[#FBFDFF] text-slate-400 uppercase font-black border-b border-blue-50">
-                    <tr>
-                      <th className="p-4 text-left w-12">NO</th>
-                      <th className="p-4 text-left min-w-[150px]">NAME</th>
-                      <th className="p-4 text-center">START</th>
-                      <th className="p-4 text-center">END</th>
-                      <th className="p-4 text-center">G</th>
-                      <th className="p-4 text-center">1P</th>
-                      <th className="p-4 text-center">2P</th>
-                      <th className="p-4 text-center">3P</th>
-                      <th className="p-4 text-center">TF</th>
-                      <th className="p-4 text-center">STATUS</th>
-                      <th className="p-4 text-center">ACTION</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-blue-50/50">
-                    {activeCourses.filter(c => c.target === Company.SAMSUG).map((c, i) => (
-                      <tr key={c.id} className="hover:bg-blue-50/20 transition-colors">
-                        <td className="p-4 text-slate-300 font-bold">{i + 1}</td>
-                        <td className="p-4">
-                          <button onClick={() => { setEditCourse(c); setActiveTab('create'); }} className="font-bold text-blue-600 text-left hover:underline leading-tight">
-                            {c.name}
-                          </button>
-                        </td>
-                        <td className="p-4 text-center whitespace-nowrap font-bold text-slate-500">{c.start}</td>
-                        <td className="p-4 text-center whitespace-nowrap font-bold text-slate-500">{c.end}</td>
-                        <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, 'G')}</td>
-                        <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, '1P')}</td>
-                        <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, '2P')}</td>
-                        <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, '3P')}</td>
-                        <td className="p-4 text-center font-black text-red-500 text-xs">{getPendingCountByGroup(c, 'TF')}</td>
-                        <td className="p-4 text-center">
-                          <span className={`px-2 py-1 rounded-lg font-black text-[8px] uppercase ${getStatusColor(getCourseStatus(c))}`}>
-                            {getCourseStatus(c)}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => handleExportExcel(c)} title="Xuất báo cáo" className="text-emerald-500 p-1.5 hover:bg-emerald-50 rounded-lg transition-colors">{ICONS.FileText}</button>
-                            <button onClick={() => { if(confirm('Xóa khóa học này?')) onDeleteCourse(c.id); }} title="Xóa" className="text-red-400 p-1.5 hover:bg-red-50 rounded-lg transition-colors">{ICONS.Trash}</button>
-                            <button onClick={() => onToggleStatus(c.id)} title="Bật/Tắt" className={`p-1.5 rounded-lg transition-colors ${c.isEnabled ? 'text-blue-500 hover:bg-blue-50' : 'text-slate-300 hover:bg-slate-50'}`}>{ICONS.Power}</button>
-                          </div>
-                        </td>
+              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.25em] ml-2">QUẢN LÝ TIẾN ĐỘ ĐÀO TẠO</h3>
+              <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/40 border border-white overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-slate-50/50 text-slate-400 uppercase font-black border-b border-slate-100">
+                      <tr>
+                        <th className="p-5 text-left w-12 opacity-50">#</th>
+                        <th className="p-5 text-left min-w-[200px]">KHÓA ĐÀO TẠO & TIẾN ĐỘ</th>
+                        <th className="p-5 text-center bg-blue-50/20">G</th>
+                        <th className="p-5 text-center bg-blue-50/20">1P</th>
+                        <th className="p-5 text-center bg-blue-50/20">2P</th>
+                        <th className="p-5 text-center bg-blue-50/20">3P</th>
+                        <th className="p-5 text-center bg-blue-50/20">TF</th>
+                        <th className="p-5 text-center">ACTION</th>
                       </tr>
-                    ))}
-                    {activeCourses.filter(c => c.target === Company.SAMSUG).length === 0 && (
-                      <tr><td colSpan={11} className="p-12 text-center text-slate-300 font-bold italic">Chưa có dữ liệu đào tạo SEV</td></tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {activeCourses.filter(c => c.target === Company.SAMSUG).map((c, i) => {
+                        const stats = getCompletionStats(c);
+                        const progressColor = stats.percent < 50 ? 'bg-red-500' : stats.percent < 80 ? 'bg-amber-500' : 'bg-emerald-500';
+                        return (
+                          <tr key={c.id} className="hover:bg-slate-50/30 transition-all group">
+                            <td className="p-5 text-slate-300 font-bold">{i + 1}</td>
+                            <td className="p-5">
+                              <div className="flex flex-col gap-2">
+                                <button onClick={() => { setEditCourse(c); setActiveTab('create'); }} className="font-extrabold text-slate-700 text-left hover:text-blue-600 transition-colors leading-tight">
+                                  {c.name}
+                                </button>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className={`h-full ${progressColor} transition-all duration-1000 ease-out`} style={{ width: `${stats.percent}%` }}></div>
+                                  </div>
+                                  <span className="text-[10px] font-black text-slate-500 min-w-[30px]">{stats.percent}%</span>
+                                </div>
+                                <div className="text-[9px] text-slate-300 font-bold uppercase tracking-wider">
+                                  {stats.signed}/{stats.total} Nhân viên đã xác nhận
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-5 text-center font-black text-red-500 text-xs bg-blue-50/5">{getPendingCountByGroup(c, 'G')}</td>
+                            <td className="p-5 text-center font-black text-red-500 text-xs bg-blue-50/5">{getPendingCountByGroup(c, '1P')}</td>
+                            <td className="p-5 text-center font-black text-red-500 text-xs bg-blue-50/5">{getPendingCountByGroup(c, '2P')}</td>
+                            <td className="p-5 text-center font-black text-red-500 text-xs bg-blue-50/5">{getPendingCountByGroup(c, '3P')}</td>
+                            <td className="p-5 text-center font-black text-red-500 text-xs bg-blue-50/5">{getPendingCountByGroup(c, 'TF')}</td>
+                            <td className="p-5">
+                              <div className="flex items-center justify-center gap-3">
+                                <button onClick={() => handleExportExcel(c)} title="Xuất báo cáo" className="text-emerald-400 hover:text-emerald-600 p-1.5 transition-all">{ICONS.FileText}</button>
+                                <button onClick={() => setConfirmModal({
+                                  isOpen: true,
+                                  title: "Xóa đào tạo?",
+                                  message: "Mọi dữ liệu ký tên trong khóa học này sẽ bị xóa vĩnh viễn khỏi hệ thống.",
+                                  type: 'danger',
+                                  onConfirm: () => { onDeleteCourse(c.id); showToast("Đã xóa khóa đào tạo"); }
+                                })} title="Xóa" className="text-red-300 hover:text-red-500 p-1.5 transition-all">{ICONS.Trash}</button>
+                                <button onClick={() => onToggleStatus(c.id)} title="Bật/Tắt hiển thị" className={`p-1.5 transition-all ${c.isEnabled ? 'text-blue-400 hover:text-blue-600' : 'text-slate-200'}`}>{ICONS.Power}</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
-            {/* Section VENDOR */}
-            <div className="space-y-4">
-              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">OTHER (COMING SOON)</h3>
-              <div className="bg-white rounded-[2rem] border border-dashed border-blue-100 p-12 flex items-center justify-center shadow-sm">
-                <span className="text-slate-300 font-bold italic text-sm">Chưa phát triển dữ liệu vendor</span>
+            {/* Exception Reason Management */}
+            <div className="bg-white p-6 rounded-[2.5rem] border border-white shadow-xl shadow-slate-200/40">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-1">NHẬP LÝ DO NGOẠI LỆ (VẮNG THI / NGHỈ)</h4>
+              <div className="bg-slate-50 rounded-2xl p-4 flex items-center mb-4 border border-slate-100">
+                <span className="text-slate-300 mr-4 ml-1">{ICONS.Search}</span>
+                <input type="text" className="bg-transparent text-sm w-full outline-none font-extrabold placeholder:text-slate-300" placeholder="Tìm ID hoặc Tên nhân viên chưa ký..." value={pendingSearch} onChange={e => setPendingSearch(e.target.value)} />
               </div>
-            </div>
-
-            {/* Exception Handling */}
-            <div className="bg-white p-6 rounded-[2.5rem] border border-blue-50 shadow-sm">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Xử lý lý do ngoại lệ</h4>
-              <div className="bg-slate-50 rounded-2xl p-4 flex items-center mb-4 border border-blue-50/50">
-                <span className="text-slate-300 mr-3">{ICONS.Search}</span>
-                <input type="text" className="bg-transparent text-sm w-full outline-none font-bold" placeholder="Tìm ID hoặc Tên để nhập lý do..." value={pendingSearch} onChange={e => setPendingSearch(e.target.value)} />
-              </div>
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {filteredPendingList.length === 0 && pendingSearch && (
+                  <div className="p-10 text-center text-slate-300 font-bold text-xs italic">Không tìm thấy dữ liệu phù hợp.</div>
+                )}
                 {filteredPendingList.map(({course, att, usr}) => (
-                  <div key={`${course.id}-${att.userId}`} className="flex items-center justify-between p-3 bg-white rounded-2xl border border-blue-50 shadow-sm">
-                    <div className="flex-1 truncate">
-                      <div className="font-black text-xs text-slate-700">{usr?.name} <span className="text-blue-500 font-bold">#{usr?.id}</span></div>
-                      <div className="text-[9px] text-slate-400 font-bold">{course.name}</div>
+                  <div key={`${course.id}-${att.userId}`} className="flex items-center justify-between p-3 bg-white rounded-2xl border border-slate-50 shadow-sm hover:border-blue-100 transition-all animate-in fade-in zoom-in-95">
+                    <div className="flex-1 truncate mr-4">
+                      <div className="font-extrabold text-xs text-slate-700">{usr?.name} <span className="text-blue-500 ml-1">#{usr?.id}</span></div>
+                      <div className="text-[9px] text-slate-400 font-bold uppercase truncate">{course.name}</div>
                     </div>
-                    <input className="p-2 bg-blue-50/30 border border-blue-100 outline-none rounded-xl w-32 text-[10px] font-black text-center text-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" placeholder="Nhập lý do..." defaultValue={att.reason} onBlur={(e) => updateReason(course.id, att.userId, e.target.value)} />
+                    <input 
+                      className="p-2 bg-slate-50 border border-slate-100 outline-none rounded-xl w-32 text-[10px] font-black text-blue-600 focus:bg-white focus:border-blue-200 transition-all" 
+                      placeholder="Nhập lý do..." 
+                      defaultValue={att.reason} 
+                      onBlur={(e) => updateReason(course.id, att.userId, e.target.value)} 
+                    />
                   </div>
                 ))}
               </div>
@@ -242,212 +325,107 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 3: FINISHED / REPORT */}
-        {activeTab === 'finished' && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest ml-2">Báo cáo đào tạo hoàn thành</h3>
-            <div className="overflow-x-auto rounded-[2rem] bg-white shadow-sm border border-blue-50">
-              <table className="w-full text-xs">
-                <thead className="bg-[#FBFDFF] text-slate-500 uppercase font-black border-b border-blue-50">
+        {activeTab === 'users' && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
+            <div className="flex justify-between items-center bg-white p-6 rounded-[2.5rem] border border-white shadow-xl shadow-slate-200/40">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-800 tracking-tight">Cơ sở dữ liệu</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Phân loại: {userTab}</p>
+              </div>
+              <label className="bg-blue-600 text-white px-6 py-4 rounded-[1.5rem] text-[11px] font-black shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center gap-3 cursor-pointer active:scale-95">
+                {ICONS.FileText} IMPORT EXCEL
+                <input type="file" ref={fileInputRef} accept=".xlsx, .xls" className="hidden" onChange={handleImportExcel} />
+              </label>
+            </div>
+            
+            <div className="flex bg-slate-100 p-1.5 rounded-[1.8rem] border border-slate-50 shadow-inner">
+              <button onClick={() => setUserTab('SEV')} className={`flex-1 py-4 text-[10px] font-black uppercase rounded-[1.4rem] transition-all ${userTab === 'SEV' ? 'bg-white text-blue-600 shadow-xl' : 'text-slate-400'}`}>SAMSUNG (SEV)</button>
+              <button onClick={() => setUserTab('Vendor')} className={`flex-1 py-4 text-[10px] font-black uppercase rounded-[1.4rem] transition-all ${userTab === 'Vendor' ? 'bg-white text-blue-600 shadow-xl' : 'text-slate-400'}`}>VENDOR</button>
+            </div>
+
+            <div className="overflow-hidden rounded-[2.5rem] bg-white border border-white shadow-xl shadow-slate-200/40">
+              <table className="w-full text-[11px]">
+                <thead className="bg-slate-50/50 text-slate-400 uppercase font-black border-b border-slate-100">
                   <tr>
-                    <th className="p-4 text-left">No</th>
-                    <th className="p-4 text-left">Tên Khóa Học</th>
-                    <th className="p-4 text-center">Tỷ Lệ</th>
-                    <th className="p-4 text-center">Action</th>
+                    <th className="p-5 text-left w-12 opacity-50">#</th>
+                    <th className="p-5 text-left">HỌ TÊN NHÂN VIÊN</th>
+                    <th className="p-5 text-left">BỘ PHẬN</th>
+                    <th className="p-5 text-center">XÓA</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-blue-50/50">
-                  {courses.filter(c => getCourseStatus(c) === CourseStatus.CLOSED).map((c, i) => {
-                    const total = c.attendance.length;
-                    const signed = c.attendance.filter(a => a.status === 'Signed').length;
-                    const rate = total > 0 ? Math.round((signed/total)*100) : 0;
-                    return (
-                      <tr key={c.id}>
-                        <td className="p-4 text-slate-400 font-bold">{i+1}</td>
-                        <td className="p-4 font-black text-slate-700">{c.name}</td>
-                        <td className="p-4 text-center">
-                          <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full font-black text-[10px]">
-                            {signed}/{total} ({rate}%)
-                          </span>
-                        </td>
-                        <td className="p-4 text-center">
-                          <div className="flex justify-center gap-2">
-                            <button onClick={() => handleExportExcel(c)} className="text-emerald-500 p-2 hover:bg-emerald-50 rounded-lg transition-colors">{ICONS.FileText}</button>
-                            <button className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors">{ICONS.Pdf}</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                <tbody className="divide-y divide-slate-50">
+                  {users.filter(u => (userTab === 'SEV' ? u.company === Company.SAMSUG : u.company === Company.VENDOR)).map((u, i) => (
+                    <tr key={u.id} className="hover:bg-slate-50/30 group transition-all">
+                      <td className="p-5 text-slate-300 font-bold">{i+1}</td>
+                      <td className="p-5">
+                        <div className="font-extrabold text-slate-700">{u.name}</div>
+                        <div className="text-[9px] font-bold text-blue-400 tracking-wider">ID: {u.id}</div>
+                      </td>
+                      <td className="p-5 font-bold text-slate-500 uppercase">{u.part} <span className="opacity-20 mx-1">|</span> {u.group}</td>
+                      <td className="p-5 text-center">
+                        {u.id !== '16041988' && (
+                          <button onClick={() => setConfirmModal({
+                            isOpen: true,
+                            title: "Xóa nhân sự?",
+                            message: `Hành động này sẽ xóa vĩnh viễn nhân viên ${u.name} khỏi cơ sở dữ liệu.`,
+                            type: 'danger',
+                            onConfirm: () => { setUsers(prev => prev.filter(usr => usr.id !== u.id)); showToast("Đã xóa nhân sự"); }
+                          })} className="text-red-300 hover:text-red-500 p-2.5 transition-all">
+                            {ICONS.Trash}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           </div>
         )}
-
-        {/* TAB 4: USERS */}
-        {activeTab === 'users' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center bg-white p-5 rounded-[2rem] border border-blue-50 shadow-sm">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Quản lý Nhân sự</h3>
-              <label className="bg-blue-600 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black cursor-pointer shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95">
-                {ICONS.FileText} IMPORT EXCEL
-                <input type="file" accept=".xlsx, .xls" className="hidden" />
-              </label>
-            </div>
-            <UserManagement users={users} setUsers={setUsers} userTab={userTab} setUserTab={setUserTab} searchTerm={userSearchTerm} setSearchTerm={setUserSearchTerm} />
-          </div>
-        )}
       </div>
 
-      {/* BOTTOM NAVIGATION */}
-      <div className="bg-white border-t border-blue-50 px-6 py-4 shrink-0 flex justify-between items-center fixed bottom-0 left-0 right-0 max-w-lg mx-auto z-50 rounded-t-[3rem] shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)]">
-        <TabButton active={activeTab === 'create'} icon={ICONS.Plus} label="CREATE" onClick={() => { setEditCourse(null); setActiveTab('create'); }} />
-        <TabButton active={activeTab === 'acting'} icon={ICONS.FileText} label="ACTING" onClick={() => setActiveTab('acting')} />
-        <TabButton active={activeTab === 'finished'} icon={ICONS.Check} label="FINISHED" onClick={() => setActiveTab('finished')} />
-        <TabButton active={activeTab === 'users'} icon={ICONS.User} label="USERS" onClick={() => setActiveTab('users')} />
+      {/* Bottom Navigation */}
+      <div className="bg-white/80 backdrop-blur-xl border-t border-slate-100 px-8 py-5 shrink-0 flex justify-between items-center fixed bottom-0 left-0 right-0 max-w-lg mx-auto z-50 rounded-t-[3rem] shadow-[0_-15px_40px_-20px_rgba(0,0,0,0.1)]">
+        <TabButton active={activeTab === 'create'} icon={ICONS.Plus} label="Tạo mới" onClick={() => { setEditCourse(null); setActiveTab('create'); }} />
+        <TabButton active={activeTab === 'acting'} icon={ICONS.FileText} label="Tiến độ" onClick={() => setActiveTab('acting')} />
+        <TabButton active={activeTab === 'finished'} icon={ICONS.Check} label="Báo cáo" onClick={() => setActiveTab('finished')} />
+        <TabButton active={activeTab === 'users'} icon={ICONS.User} label="Nhân sự" onClick={() => setActiveTab('users')} />
       </div>
     </div>
   );
 };
 
 const TabButton: React.FC<{ active: boolean, icon: React.ReactNode, label: string, onClick: () => void }> = ({ active, icon, label, onClick }) => (
-  <button onClick={onClick} className={`flex flex-col items-center gap-1.5 transition-all ${active ? 'text-blue-600 scale-105' : 'text-slate-300 hover:text-slate-400'}`}>
-    <div className={`p-2 rounded-2xl transition-all ${active ? 'bg-blue-50 shadow-inner' : 'bg-transparent'}`}>{icon}</div>
-    <span className={`text-[8px] font-black tracking-widest uppercase ${active ? 'opacity-100' : 'opacity-60'}`}>{label}</span>
+  <button onClick={onClick} className={`flex flex-col items-center gap-2 transition-all duration-300 ${active ? 'text-blue-600 scale-105' : 'text-slate-300 hover:text-slate-400'}`}>
+    <div className={`p-3 rounded-2xl transition-all ${active ? 'bg-blue-600 text-white shadow-xl shadow-blue-100' : 'bg-transparent'}`}>{icon}</div>
+    <span className={`text-[9px] font-extrabold tracking-widest uppercase ${active ? 'opacity-100' : 'opacity-40'}`}>{label}</span>
   </button>
 );
 
 const CourseForm: React.FC<{ initialData: Course | null, onSubmit: (c: Course) => void }> = ({ initialData, onSubmit }) => {
-  const [formData, setFormData] = useState<Course>(initialData || {
-    id: 'c' + Date.now(), name: '', start: '', end: '', content: '', target: Company.SAMSUG, isEnabled: true, attendance: []
-  });
-
+  const [formData, setFormData] = useState<Course>(initialData || { id: 'c' + Date.now(), name: '', start: '', end: '', content: '', target: Company.SAMSUG, isEnabled: true, attendance: [] });
   return (
-    <div className="bg-white rounded-[2.5rem] p-7 shadow-sm border border-blue-50 space-y-6">
-      <h4 className="font-black text-slate-800 text-xl uppercase tracking-tighter">{initialData ? 'Sửa đào tạo' : 'Tạo mới đào tạo'}</h4>
-      <div className="space-y-1">
-        <label className="text-[10px] font-black text-slate-400 ml-1 uppercase tracking-widest">Tên khóa học</label>
-        <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm outline-none font-bold border border-transparent focus:border-blue-100 focus:bg-white transition-all" placeholder="Nhập tiêu đề..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+    <div className="bg-white rounded-[3rem] p-8 shadow-2xl shadow-slate-200 border border-white space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+      <h4 className="font-extrabold text-slate-800 text-2xl tracking-tighter uppercase">{initialData ? 'Cập nhật đào tạo' : 'Khởi tạo khóa học'}</h4>
+      <div className="space-y-2">
+        <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Tên chương trình</label>
+        <input type="text" className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm outline-none font-extrabold border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all" placeholder="Ví dụ: Đào tạo chất lượng công đoạn 1P..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1">
-          <label className="text-[10px] font-black text-slate-400 ml-1 uppercase tracking-widest">Ngày bắt đầu</label>
-          <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-black text-slate-600 border border-transparent focus:border-blue-100 focus:bg-white transition-all" value={formData.start} onChange={e => setFormData({...formData, start: e.target.value})} />
+        <div>
+          <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest mb-1 block">Bắt đầu</label>
+          <input type="date" className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm font-extrabold text-slate-600 border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all" value={formData.start} onChange={e => setFormData({...formData, start: e.target.value})} />
         </div>
-        <div className="space-y-1">
-          <label className="text-[10px] font-black text-slate-400 ml-1 uppercase tracking-widest">Ngày kết thúc</label>
-          <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-black text-slate-600 border border-transparent focus:border-blue-100 focus:bg-white transition-all" value={formData.end} onChange={e => setFormData({...formData, end: e.target.value})} />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <label className="text-[10px] font-black text-slate-400 ml-1 uppercase tracking-widest">Nội dung chi tiết</label>
-        <textarea rows={5} className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold text-slate-600 border border-transparent focus:border-blue-100 focus:bg-white transition-all" placeholder="Nội dung cần xác nhận..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
-      </div>
-      <div className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border border-blue-50/50">
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setFormData({...formData, target: Company.SAMSUG})} className={`px-5 py-2.5 rounded-xl text-[10px] font-black transition-all ${formData.target === Company.SAMSUG ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>Samsung</button>
-          <button type="button" onClick={() => setFormData({...formData, target: Company.VENDOR})} className={`px-5 py-2.5 rounded-xl text-[10px] font-black transition-all ${formData.target === Company.VENDOR ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100'}`}>Vendor</button>
-        </div>
-        <div className="flex items-center gap-3">
-           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{formData.isEnabled ? 'Active' : 'Draft'}</span>
-           <button type="button" onClick={() => setFormData({...formData, isEnabled: !formData.isEnabled})} className={`w-12 h-7 rounded-full flex items-center px-1 transition-all ${formData.isEnabled ? 'bg-blue-600 justify-end shadow-inner' : 'bg-slate-300 justify-start'}`}><div className="w-5 h-5 bg-white rounded-full shadow-sm"/></button>
+        <div>
+          <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest mb-1 block">Kết thúc</label>
+          <input type="date" className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm font-extrabold text-slate-600 border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all" value={formData.end} onChange={e => setFormData({...formData, end: e.target.value})} />
         </div>
       </div>
-      <button onClick={() => onSubmit(formData)} className="w-full bg-blue-600 text-white py-5 rounded-[1.5rem] font-black text-sm uppercase shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-[0.98] transition-all">Lưu và Triển Khai</button>
-    </div>
-  );
-};
-
-const UserManagement: React.FC<{ users: User[], setUsers: React.Dispatch<React.SetStateAction<User[]>>, userTab: 'SEV' | 'Vendor', setUserTab: (v: 'SEV' | 'Vendor') => void, searchTerm: string, setSearchTerm: (s: string) => void }> = ({ users, setUsers, userTab, setUserTab, searchTerm, setSearchTerm }) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [newStaff, setNewStaff] = useState({ id: '', name: '', part: '', group: '', password: DEFAULT_PASSWORD });
-
-  const filtered = users
-    .filter(u => (u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.id.includes(searchTerm)) && ((userTab === 'SEV' && u.company === Company.SAMSUG) || (userTab === 'Vendor' && u.company === Company.VENDOR)))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const handleManualAdd = () => {
-    if (!newStaff.id || !newStaff.name) return alert("Vui lòng nhập đầy đủ!");
-    const u: User = { 
-      ...newStaff, 
-      id: newStaff.id.padStart(8, '0'), 
-      role: Role.USER, 
-      company: userTab === 'SEV' ? Company.SAMSUG : Company.VENDOR,
-      part: newStaff.part || 'N/A',
-      group: newStaff.group || 'N/A'
-    };
-    setUsers(prev => [...prev, u]);
-    setShowAdd(false);
-    setNewStaff({ id: '', name: '', part: '', group: '', password: DEFAULT_PASSWORD });
-  };
-
-  return (
-    <div className="space-y-5 pb-10">
-      <div className="bg-white rounded-[1.5rem] p-4 shadow-sm border border-blue-50 flex items-center transition-all focus-within:ring-2 focus-within:ring-blue-100/50">
-        <span className="text-blue-200 mr-3">{ICONS.Search}</span>
-        <input type="text" className="bg-transparent text-sm w-full outline-none font-bold placeholder:text-slate-300" placeholder="Tìm kiếm theo tên hoặc ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+      <div className="space-y-2">
+        <label className="text-[10px] font-black text-slate-400 ml-2 uppercase tracking-widest">Nội dung cam kết</label>
+        <textarea rows={6} className="w-full p-5 bg-slate-50 rounded-[1.5rem] text-sm font-extrabold text-slate-700 border-2 border-transparent focus:border-blue-100 focus:bg-white transition-all resize-none" placeholder="Nhập chi tiết các điều khoản đào tạo..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
       </div>
-      
-      <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/50 shadow-inner">
-        <button onClick={() => setUserTab('SEV')} className={`flex-1 py-3 text-[9px] font-black uppercase rounded-xl transition-all ${userTab === 'SEV' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>SEV STAFF</button>
-        <button onClick={() => setUserTab('Vendor')} className={`flex-1 py-3 text-[9px] font-black uppercase rounded-xl transition-all ${userTab === 'Vendor' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>VENDOR PARTNER</button>
-      </div>
-      
-      <button onClick={() => setShowAdd(!showAdd)} className="w-full bg-white border-2 border-dashed border-blue-100 py-4 rounded-[2rem] text-[10px] font-black text-blue-400 flex items-center justify-center gap-2 hover:bg-blue-50/50 transition-all uppercase tracking-widest">
-        {ICONS.Plus} {showAdd ? 'Đóng form' : 'Thêm nhân sự thủ công'}
-      </button>
-
-      {showAdd && (
-        <div className="bg-white p-7 rounded-[2.5rem] shadow-xl shadow-blue-50 border border-blue-50 space-y-4 animate-in fade-in slide-in-from-top-4">
-          <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold border border-transparent focus:border-blue-100 outline-none" placeholder="Mã nhân viên (8 số)..." value={newStaff.id} onChange={e => setNewStaff({...newStaff, id: e.target.value.replace(/\D/g, '')})} />
-          <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold border border-transparent focus:border-blue-100 outline-none" placeholder="Họ và tên..." value={newStaff.name} onChange={e => setNewStaff({...newStaff, name: e.target.value})} />
-          <div className="grid grid-cols-2 gap-4">
-            <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold border border-transparent focus:border-blue-100 outline-none" placeholder="Part (IQC 1P...)" value={newStaff.part} onChange={e => setNewStaff({...newStaff, part: e.target.value})} />
-            <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-bold border border-transparent focus:border-blue-100 outline-none" placeholder="Group (IQC G...)" value={newStaff.group} onChange={e => setNewStaff({...newStaff, group: e.target.value})} />
-          </div>
-          <button onClick={handleManualAdd} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs hover:bg-black shadow-lg active:scale-95 transition-all uppercase tracking-widest">Xác nhận thêm</button>
-        </div>
-      )}
-
-      <div className="overflow-hidden rounded-[2.5rem] bg-white border border-blue-50 shadow-sm">
-        <table className="w-full text-[10px]">
-          <thead className="bg-[#FBFDFF] text-slate-400 uppercase font-black tracking-widest border-b border-blue-50">
-            <tr>
-              <th className="p-4 text-left w-12">NO</th>
-              <th className="p-4 text-left">STAFF INFO</th>
-              <th className="p-4 text-left">PART</th>
-              <th className="p-4 text-left">GROUP</th>
-              <th className="p-4 text-center">ACTION</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-blue-50/50">
-            {filtered.map((u, i) => (
-              <tr key={u.id} className="hover:bg-blue-50/20 transition-colors">
-                <td className="p-4 text-slate-300 font-bold">{i+1}</td>
-                <td className="p-4 font-black text-slate-700">
-                  {u.name}
-                  <div className="text-[8px] font-bold text-blue-400 tracking-wider">ID: {u.id}</div>
-                </td>
-                <td className="p-4 font-black text-slate-500 uppercase">{u.part}</td>
-                <td className="p-4 font-black text-slate-500 uppercase">{u.group}</td>
-                <td className="p-4">
-                  <div className="flex gap-2 justify-center">
-                    {u.id !== '16041988' && (
-                      <button onClick={() => { if(confirm('Xóa nhân viên này?')) setUsers(users.filter(usr => usr.id !== u.id)) }} className="text-red-400 p-2 hover:bg-red-50 rounded-xl transition-all">
-                        {ICONS.Trash}
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={5} className="p-12 text-center text-slate-300 font-bold italic">Không tìm thấy nhân sự phù hợp</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <button onClick={() => { if(!formData.name || !formData.start || !formData.end) return; onSubmit(formData); }} className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-extrabold text-sm uppercase shadow-2xl hover:bg-black active:scale-95 transition-all">Lưu & Triển Khai</button>
     </div>
   );
 };
