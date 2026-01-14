@@ -1,6 +1,4 @@
-
 // Modular Firebase v9 initialization
-// Fix: Ensuring initializeApp is imported as a named export from 'firebase/app'
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
@@ -17,6 +15,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase app and services
+// Use initializeApp from firebase/app as a named export for modular SDK v9+
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
