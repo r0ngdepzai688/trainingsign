@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "Hệ thống xác nhận đào tạo IQC Pro",
   "main": "index.js",
+  "scripts": {
+    "prepare-cap": "mkdir www & copy index.html www & copy index.tsx www"
+  },
   "dependencies": {
     "@capacitor/android": "^5.0.0",
     "@capacitor/core": "^5.0.0",

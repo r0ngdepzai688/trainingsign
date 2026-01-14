@@ -1,6 +1,7 @@
+
 // Modular Firebase v9 initialization
-// Fix: Use namespace import to resolve "no exported member 'initializeApp'" error in some environments
-import * as firebaseApp from 'firebase/app';
+// Corrected to use named import for initializeApp as per Firebase v9+ standards
+import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -16,7 +17,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase app and services
-// Fix: Use the namespace-imported initializeApp function to avoid resolution issues
-const app = firebaseApp.initializeApp(firebaseConfig);
+// Fix: Use the standard initializeApp function directly
+const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
