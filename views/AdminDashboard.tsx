@@ -6,7 +6,6 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Hàm hỗ trợ loại bỏ dấu tiếng Việt để tránh lỗi font trong PDF
 const removeVietnameseTones = (str: string) => {
   str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
   str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
@@ -44,6 +43,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'acting' | 'finished' | 'users'>('acting');
   const [userTab, setUserTab] = useState<'SEV' | 'Vendor'>('SEV');
+  const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,13 +56,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const isCompleted = course.attendance.length > 0 && 
       course.attendance.every(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== ''));
     if (isCompleted) return CourseStatus.CLOSED;
+    
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const startDate = new Date(course.start);
+    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(course.end);
+    endDate.setHours(0, 0, 0, 0);
+
     if (now < startDate) return CourseStatus.PLAN;
     if (now > endDate) return CourseStatus.PENDING;
     return CourseStatus.OPENING;
+  };
+
+  const getStatusUI = (status: CourseStatus) => {
+    switch (status) {
+      case CourseStatus.PLAN: return { color: 'bg-slate-400', label: 'Chưa tới' };
+      case CourseStatus.OPENING: return { color: 'bg-blue-500', label: 'Đang mở' };
+      case CourseStatus.PENDING: return { color: 'bg-amber-500', label: 'Quá hạn' };
+      case CourseStatus.CLOSED: return { color: 'bg-emerald-500', label: 'Đã đóng' };
+      default: return { color: 'bg-slate-300', label: 'N/A' };
+    }
   };
 
   const getCompletionStats = (course: Course) => {
@@ -86,15 +100,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleExportPDF = (course: Course) => {
     try {
       const doc = new jsPDF();
-      
       doc.setFontSize(18);
       doc.text(removeVietnameseTones("BAO CAO KET QUA DAO TAO"), 105, 20, { align: 'center' });
-      
       doc.setFontSize(10);
       doc.text(removeVietnameseTones(`Ten khoa hoc: ${course.name}`), 14, 35);
       doc.text(`Thoi gian: ${course.start} - ${course.end}`, 14, 42);
       doc.text(`Doi tuong: ${course.target}`, 14, 49);
-      
       const content = removeVietnameseTones(`Noi dung: ${course.content || "N/A"}`);
       const splitContent = doc.splitTextToSize(content, 180);
       doc.text(splitContent, 14, 58);
@@ -104,14 +115,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         let statusText = "CHUA KY";
         if (a.status === 'Signed') statusText = "DA KY";
         else if (a.reason) statusText = `VANG (${removeVietnameseTones(a.reason)})`;
-        
-        return [
-          i + 1,
-          u?.id || 'N/A',
-          removeVietnameseTones(u?.name || 'N/A'),
-          removeVietnameseTones(u?.part || 'N/A'),
-          statusText
-        ];
+        return [i + 1, u?.id || 'N/A', removeVietnameseTones(u?.name || 'N/A'), removeVietnameseTones(u?.part || 'N/A'), statusText];
       });
 
       autoTable(doc, {
@@ -121,26 +125,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         theme: 'grid',
         headStyles: { fillColor: [15, 23, 42] },
         styles: { fontSize: 8, cellPadding: 2 },
-        columnStyles: { 4: { cellWidth: 50 } }, // Dành chỗ cho chữ ký
         didDrawCell: (data) => {
           if (data.column.index === 4 && data.cell.section === 'body') {
             const rowIndex = data.row.index;
             const att = course.attendance[rowIndex];
             if (att.status === 'Signed' && att.signature) {
-              try {
-                doc.addImage(att.signature, 'PNG', data.cell.x + 2, data.cell.y + 1, 45, 10);
-              } catch (e) {}
+              try { doc.addImage(att.signature, 'PNG', data.cell.x + 2, data.cell.y + 1, 45, 10); } catch (e) {}
             }
           }
         }
       });
-
       doc.save(`Bao_cao_${course.id}.pdf`);
       showToast("Đã tải PDF!");
-    } catch (err) {
-      console.error(err);
-      showToast("Lỗi xuất PDF!", "error");
-    }
+    } catch (err) { showToast("Lỗi xuất PDF!", "error"); }
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -153,7 +150,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(sheet);
-        
         const getVal = (row: any, keys: string[]) => {
           for (const key of keys) {
             const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '').includes(key.toLowerCase()));
@@ -161,23 +157,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }
           return '';
         };
-
         const imported = jsonData.map((row: any) => ({
           id: String(getVal(row, ['id', 'manhanvien', 'mnv', 'staffid', 'manv']) || '').trim().padStart(8, '0'),
           name: String(getVal(row, ['name', 'hova', 'hoten', 'fullname']) || '').trim(),
           part: String(getVal(row, ['part', 'bophan', 'dept']) || 'N/A').trim(),
           group: String(getVal(row, ['group', 'nhom', 'team']) || 'N/A').trim(),
-          role: Role.USER, 
-          password: DEFAULT_PASSWORD, 
-          company: userTab === 'SEV' ? Company.SAMSUG : Company.VENDOR
+          role: Role.USER, password: DEFAULT_PASSWORD, company: userTab === 'SEV' ? Company.SAMSUG : Company.VENDOR
         })).filter(u => u.id && u.id !== '00000000' && u.name);
-        
         setUsers(prev => {
           const existingIds = new Set(prev.map(u => u.id));
           return [...prev, ...imported.filter(i => !existingIds.has(i.id))];
         });
         showToast(`Đã thêm ${imported.length} nhân sự`);
-        if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (err) { showToast("Lỗi file!", "error"); }
     };
     reader.readAsArrayBuffer(file);
@@ -186,11 +177,80 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const activeCourses = courses.filter(c => getCourseStatus(c) !== CourseStatus.CLOSED);
   const finishedCourses = courses.filter(c => getCourseStatus(c) === CourseStatus.CLOSED);
 
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+  };
+
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#F8FAFF]">
       {toast && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded-xl shadow-lg font-bold text-xs text-white ${toast.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>
           {toast.message}
+        </div>
+      )}
+
+      {/* Chi tiết khóa học - Nhập ngoại lệ */}
+      {viewingCourse && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-xl sm:rounded-[2rem] h-[90vh] sm:h-[80vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-6 border-b flex justify-between items-center">
+              <div>
+                <h3 className="font-black text-slate-800 text-lg uppercase leading-tight">{viewingCourse.name}</h3>
+                <p className="text-[10px] font-black text-slate-400 mt-1">QUẢN LÝ NGOẠI LỆ / CHƯA KÝ</p>
+              </div>
+              <button onClick={() => setViewingCourse(null)} className="p-2 bg-slate-100 rounded-xl text-slate-400">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {viewingCourse.attendance.filter(a => a.status === 'Pending').length === 0 ? (
+                <div className="text-center py-20">
+                  <div className="text-emerald-500 flex justify-center mb-4">{ICONS.Check}</div>
+                  <p className="text-slate-400 font-bold text-sm">Tất cả đã hoàn thành ký xác nhận!</p>
+                </div>
+              ) : (
+                viewingCourse.attendance.filter(a => a.status === 'Pending').map(a => {
+                  const u = users.find(x => x.id === a.userId);
+                  return (
+                    <div key={a.userId} className="bg-slate-50 p-4 rounded-2xl border flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="font-black text-slate-800 text-sm">{u?.name || 'Unknown'}</div>
+                          <div className="text-[10px] font-bold text-blue-500">{u?.id} • {u?.part}</div>
+                        </div>
+                        <div className="bg-amber-100 text-amber-700 text-[8px] px-2 py-1 rounded-md font-black">CHƯA KÝ</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="Lý do vắng mặt (Nghỉ phép, đi công tác...)" 
+                          className="flex-1 bg-white border rounded-xl px-3 py-2 text-[11px] font-bold outline-none focus:border-blue-500"
+                          defaultValue={a.reason || ''}
+                          onBlur={(e) => {
+                            const newReason = e.target.value;
+                            if (newReason !== a.reason) {
+                              const updatedCourse = {
+                                ...viewingCourse,
+                                attendance: viewingCourse.attendance.map(att => 
+                                  att.userId === a.userId ? { ...att, reason: newReason } : att
+                                )
+                              };
+                              onUpdateCourse(updatedCourse);
+                              setViewingCourse(updatedCourse);
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div className="p-6 border-t bg-slate-50">
+              <button onClick={() => setViewingCourse(null)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs">XÁC NHẬN ĐÃ LƯU</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -224,26 +284,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <tbody className="divide-y">
                     {activeCourses.map(c => {
                       const stats = getCompletionStats(c);
+                      const status = getCourseStatus(c);
+                      const ui = getStatusUI(status);
                       return (
                         <tr key={c.id} className="hover:bg-slate-50">
                           <td className="p-4">
-                            <div className="font-black text-slate-700 mb-1">{c.name}</div>
+                            <div className="flex items-center gap-2 mb-1.5">
+                               <div className={`w-2 h-2 rounded-full ${ui.color}`}></div>
+                               <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter">
+                                 {ui.label} • {formatDate(c.start)}-{formatDate(c.end)}
+                               </span>
+                            </div>
+                            <div className="font-black text-slate-800 mb-2">{c.name}</div>
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div className="h-full bg-blue-500" style={{ width: `${stats.percent}%` }}></div>
                               </div>
                               <span className="font-black text-blue-600">{stats.percent}%</span>
                             </div>
-                            <div className="text-[9px] text-slate-400 font-bold mt-1 uppercase">Đã ký: {stats.signed}/{stats.total}</div>
+                            <div className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-tight">Ký: {stats.signed}/{stats.total}</div>
                           </td>
                           <td className="p-4 text-center font-black text-red-500">{getPendingCountByGroup(c, 'G')}</td>
                           <td className="p-4 text-center font-black text-red-500">{getPendingCountByGroup(c, '1P')}</td>
                           <td className="p-4 text-center font-black text-red-500">{getPendingCountByGroup(c, '2P')}</td>
                           <td className="p-4 text-center font-black text-red-500">{getPendingCountByGroup(c, '3P')}</td>
                           <td className="p-4 text-center font-black text-red-500">{getPendingCountByGroup(c, 'TF')}</td>
-                          <td className="p-4 text-center space-x-1">
-                            <button onClick={() => handleExportPDF(c)} className="text-emerald-500 p-1">{ICONS.Pdf}</button>
-                            <button onClick={() => onDeleteCourse(c.id)} className="text-red-300 p-1">{ICONS.Trash}</button>
+                          <td className="p-4 text-center">
+                            <div className="flex flex-col gap-2 items-center">
+                              <button onClick={() => setViewingCourse(c)} className="text-blue-500 p-1 hover:scale-110 transition-transform">{ICONS.Eye}</button>
+                              <button onClick={() => handleExportPDF(c)} className="text-emerald-500 p-1 hover:scale-110 transition-transform">{ICONS.Pdf}</button>
+                              <button onClick={() => onDeleteCourse(c.id)} className="text-red-300 p-1 hover:text-red-500 transition-colors">{ICONS.Trash}</button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -259,12 +330,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="space-y-4">
             <h3 className="text-lg font-black text-slate-800">Lịch sử hoàn thành</h3>
             {finishedCourses.map(c => (
-              <div key={c.id} className="bg-white p-4 rounded-3xl border flex items-center justify-between">
+              <div key={c.id} className="bg-white p-4 rounded-3xl border flex items-center justify-between shadow-sm">
                 <div>
                   <div className="font-black text-slate-800 text-sm">{c.name}</div>
-                  <div className="text-[10px] font-bold text-slate-400">{c.start} - {c.end}</div>
+                  <div className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">{formatDate(c.start)} - {formatDate(c.end)}</div>
                 </div>
-                <button onClick={() => handleExportPDF(c)} className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg">{ICONS.Pdf}</button>
+                <button onClick={() => handleExportPDF(c)} className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-transform">{ICONS.Pdf}</button>
               </div>
             ))}
           </div>
@@ -274,7 +345,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="space-y-4">
             <div className="flex justify-between items-center bg-white p-4 rounded-[2rem] border shadow-sm">
                <h3 className="font-black text-slate-800">Quản lý nhân sự</h3>
-               <label className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black cursor-pointer">
+               <label className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black cursor-pointer active:scale-95 transition-transform">
                  IMPORT EXCEL
                  <input type="file" ref={fileInputRef} accept=".xlsx, .xls" className="hidden" onChange={handleImportExcel} />
                </label>
@@ -283,7 +354,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button onClick={() => setUserTab('SEV')} className={`flex-1 py-2 text-[10px] font-black rounded-xl transition-all ${userTab === 'SEV' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>SAMSUNG</button>
               <button onClick={() => setUserTab('Vendor')} className={`flex-1 py-2 text-[10px] font-black rounded-xl transition-all ${userTab === 'Vendor' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>VENDOR</button>
             </div>
-            <div className="bg-white rounded-[2rem] border overflow-hidden">
+            <div className="bg-white rounded-[2rem] border overflow-hidden shadow-sm">
               <table className="w-full text-[10px]">
                 <thead className="bg-slate-50 text-slate-400 uppercase font-black border-b">
                   <tr>
@@ -301,7 +372,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="text-blue-500 font-bold opacity-70">ID: {u.id}</div>
                       </td>
                       <td className="p-4 font-bold text-slate-500 uppercase">{u.part}</td>
-                      <td className="p-4 font-bold text-blue-600 uppercase bg-blue-50/30">{u.group}</td>
+                      <td className="p-4 font-bold text-blue-600 uppercase">
+                        <span className="bg-blue-50 px-2 py-1 rounded-md">{u.group}</span>
+                      </td>
                       <td className="p-4 text-center">
                         <button onClick={() => setUsers(prev => prev.filter(x => x.id !== u.id))} className="text-red-300 hover:text-red-500 transition-colors">{ICONS.Trash}</button>
                       </td>
@@ -326,7 +399,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
 const TabButton = ({ active, icon, label, onClick }: any) => (
   <button onClick={onClick} className={`flex flex-col items-center gap-1 ${active ? 'text-blue-600' : 'text-slate-300'}`}>
-    <div className={`p-2 rounded-xl ${active ? 'bg-blue-600 text-white shadow-md' : ''}`}>{icon}</div>
+    <div className={`p-2 rounded-xl transition-all ${active ? 'bg-blue-600 text-white shadow-md scale-110' : ''}`}>{icon}</div>
     <span className="text-[8px] font-black uppercase tracking-tighter">{label}</span>
   </button>
 );
@@ -387,7 +460,7 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border space-y-5">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-5">
       <h4 className="font-black text-slate-800 text-lg uppercase tracking-tight">Khởi tạo đào tạo</h4>
       <div className="space-y-1">
         <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Tên khóa học</label>
@@ -414,13 +487,13 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
       </div>
       {targetType === 'EXCEL' && (
         <div className="p-5 border-2 border-dashed border-slate-200 rounded-2xl text-center bg-slate-50/50">
-          <input type="file" className="text-[10px] w-full" onChange={handleExcel} />
+          <input type="file" className="text-[10px] w-full file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onChange={handleExcel} />
           {specificUsers.length > 0 && <p className="text-[10px] font-black text-emerald-500 mt-2">✅ Đã nhận {specificUsers.length} nhân sự</p>}
         </div>
       )}
       <div className="space-y-1">
         <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Nội dung cam kết</label>
-        <textarea rows={3} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm border focus:border-blue-300 transition-all" placeholder="Nhập nội dung..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
+        <textarea rows={3} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm border focus:border-blue-300 transition-all" placeholder="Nhập nội dung cam kết..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
       </div>
       <button onClick={handleCreate} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl uppercase text-xs tracking-widest active:scale-95 transition-all">BẮT ĐẦU TRIỂN KHAI</button>
     </div>
