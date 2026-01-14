@@ -1,0 +1,14 @@
+
+{
+  "appId": "com.iqc.training.pro",
+  "appName": "IQC Training Pro",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "server": {
+    "allowNavigation": [
+      "*.firebaseapp.com",
+      "*.googleapis.com",
+      "*.gstatic.com"
+    ]
+  }
+}
