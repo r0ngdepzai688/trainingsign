@@ -135,7 +135,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       doc.save(`Bao_cao_${course.name.replace(/\s+/g, '_')}.pdf`);
       showToast("Đã tải PDF!");
     } catch (err) {
-      console.error(err);
       showToast("Lỗi khi tạo PDF!", "error");
     }
   };
@@ -150,19 +149,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(sheet);
+        
         const getVal = (row: any, keys: string[]) => {
           for (const key of keys) {
-            const foundKey = Object.keys(row).find(k => k.toLowerCase().trim() === key.toLowerCase().trim());
+            const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
             if (foundKey) return row[foundKey];
           }
           return '';
         };
+
         const imported = jsonData.map((row: any) => ({
-          id: String(getVal(row, ['id', 'mã nhân viên', 'ma nhan vien', 'mnv', 'staff id']) || '').trim().padStart(8, '0'),
-          name: String(getVal(row, ['name', 'họ và tên', 'ho va ten', 'họ tên', 'tên']) || '').trim(),
-          part: String(getVal(row, ['part', 'bộ phận', 'bo phan', 'dept']) || 'N/A').trim(),
-          group: String(getVal(row, ['group', 'nhóm', 'nhom', 'team']) || 'N/A').trim(),
-          role: Role.USER, password: DEFAULT_PASSWORD, company: userTab === 'SEV' ? Company.SAMSUG : Company.VENDOR
+          id: String(getVal(row, ['id', 'mãnhânviên', 'mnv', 'staffid', 'mânv']) || '').trim().padStart(8, '0'),
+          name: String(getVal(row, ['name', 'họvàtên', 'họtên', 'fullname']) || '').trim(),
+          part: String(getVal(row, ['part', 'bộphận', 'dept']) || 'N/A').trim(),
+          group: String(getVal(row, ['group', 'nhóm', 'team']) || 'N/A').trim(),
+          role: Role.USER, 
+          password: DEFAULT_PASSWORD, 
+          company: userTab === 'SEV' ? Company.SAMSUG : Company.VENDOR
         })).filter(u => u.id && u.id !== '00000000' && u.name);
         
         setUsers(prev => {
@@ -185,24 +188,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     showToast("Đã cập nhật lý do");
   };
-
-  const filteredPending = useMemo(() => {
-    if (!pendingSearch.trim()) return [];
-    const res: any[] = [];
-    courses.forEach(c => {
-      if (getCourseStatus(c) !== CourseStatus.CLOSED) {
-        c.attendance.forEach(a => {
-          if (a.status === 'Pending' && !(a.reason)) {
-            const u = users.find(usr => usr.id === a.userId);
-            if (u && (u.name.toLowerCase().includes(pendingSearch.toLowerCase()) || u.id.includes(pendingSearch))) {
-              res.push({ course: c, att: a, usr: u });
-            }
-          }
-        });
-      }
-    });
-    return res;
-  }, [courses, users, pendingSearch]);
 
   const activeCourses = courses.filter(c => getCourseStatus(c) !== CourseStatus.CLOSED);
   const finishedCourses = courses.filter(c => getCourseStatus(c) === CourseStatus.CLOSED);
@@ -273,19 +258,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </table>
               </div>
             </div>
-
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4">Nhập lý do vắng / ngoại lệ</h4>
-              <input type="text" className="w-full bg-slate-50 p-3 rounded-xl outline-none text-xs font-bold border border-slate-100" placeholder="Tìm tên/ID chưa ký..." value={pendingSearch} onChange={e => setPendingSearch(e.target.value)} />
-              <div className="mt-4 space-y-2 max-h-48 overflow-y-auto">
-                {filteredPending.map(item => (
-                  <div key={`${item.course.id}-${item.usr.id}`} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                    <div className="text-[10px] font-bold text-slate-600">{item.usr.name} <span className="text-blue-400">#{item.usr.id}</span></div>
-                    <input className="bg-white border rounded px-2 py-1 text-[10px] w-28 outline-none" placeholder="Lý do..." onBlur={(e) => updateReason(item.course.id, item.usr.id, e.target.value)} />
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
@@ -307,7 +279,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'users' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center bg-white p-4 rounded-[2rem] border shadow-sm">
-               <h3 className="font-black text-slate-800">Nhân sự</h3>
+               <h3 className="font-black text-slate-800">Quản lý nhân sự</h3>
                <label className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black cursor-pointer">
                  IMPORT EXCEL
                  <input type="file" ref={fileInputRef} accept=".xlsx, .xls" className="hidden" onChange={handleImportExcel} />
@@ -319,23 +291,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             <div className="bg-white rounded-[2rem] border overflow-hidden">
               <table className="w-full text-[10px]">
-                <thead className="bg-slate-50 text-slate-400 uppercase font-black">
+                <thead className="bg-slate-50 text-slate-400 uppercase font-black border-b">
                   <tr>
                     <th className="p-4 text-left">HỌ TÊN / ID</th>
                     <th className="p-4 text-left">BỘ PHẬN</th>
-                    <th className="p-4 text-center">XÓA</th>
+                    <th className="p-4 text-left">NHÓM</th>
+                    <th className="p-4 text-center w-12">XÓA</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {users.filter(u => userTab === 'SEV' ? u.company === Company.SAMSUG : u.company === Company.VENDOR).map(u => (
-                    <tr key={u.id}>
+                    <tr key={u.id} className="hover:bg-slate-50/50">
                       <td className="p-4">
                         <div className="font-black text-slate-700">{u.name}</div>
-                        <div className="text-blue-400">ID: {u.id}</div>
+                        <div className="text-blue-500 font-bold opacity-70">ID: {u.id}</div>
                       </td>
                       <td className="p-4 font-bold text-slate-500 uppercase">{u.part}</td>
+                      <td className="p-4 font-bold text-blue-600 uppercase bg-blue-50/30">{u.group}</td>
                       <td className="p-4 text-center">
-                        <button onClick={() => setUsers(prev => prev.filter(x => x.id !== u.id))} className="text-red-300">{ICONS.Trash}</button>
+                        <button onClick={() => setUsers(prev => prev.filter(x => x.id !== u.id))} className="text-red-300 hover:text-red-500 transition-colors">{ICONS.Trash}</button>
                       </td>
                     </tr>
                   ))}
@@ -377,15 +351,28 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
         const data = new Uint8Array(evt.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const list = XLSX.utils.sheet_to_json(sheet).map((row: any) => ({
-          id: String(row['Mã nhân viên'] || row['ID'] || '').trim().padStart(8, '0'),
-          name: String(row['Họ và Tên'] || row['Name'] || '').trim(),
-          part: String(row['Bộ phận'] || row['Part'] || 'N/A').trim(),
-          group: String(row['Nhóm'] || row['Group'] || 'N/A').trim(),
-          role: Role.USER, password: DEFAULT_PASSWORD, company: Company.SAMSUG
-        })).filter(u => u.id && u.id !== '00000000');
+        const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+        const getVal = (row: any, keys: string[]) => {
+          for (const key of keys) {
+            const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
+            if (foundKey) return row[foundKey];
+          }
+          return '';
+        };
+
+        const list = jsonData.map((row: any) => ({
+          id: String(getVal(row, ['id', 'mãnhânviên', 'mnv', 'staffid', 'mânv']) || '').trim().padStart(8, '0'),
+          name: String(getVal(row, ['name', 'họvàtên', 'họtên', 'fullname']) || '').trim(),
+          part: String(getVal(row, ['part', 'bộphận', 'dept']) || 'N/A').trim(),
+          group: String(getVal(row, ['group', 'nhóm', 'team']) || 'N/A').trim(),
+          role: Role.USER, 
+          password: DEFAULT_PASSWORD, 
+          company: Company.SAMSUG
+        })).filter(u => u.id && u.id !== '00000000' && u.name);
+
         setSpecificUsers(list);
-      } catch (err) { alert('Lỗi file!'); }
+      } catch (err) { alert('Lỗi file Excel!'); }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -406,12 +393,12 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
       finalUsers = users.filter(u => u.company === Company.VENDOR);
       courseTarget = Company.VENDOR;
     } else {
-      finalUsers = specificUsers;
-      courseTarget = Company.SAMSUG; // Mặc định cho danh sách riêng là Samsung hoặc tùy chỉnh
+      finalUsers = [...specificUsers];
+      courseTarget = Company.SAMSUG; 
     }
 
-    if (finalUsers.length === 0) {
-      alert("Không tìm thấy nhân sự phù hợp với đối tượng đã chọn!");
+    if (!finalUsers || finalUsers.length === 0) {
+      alert("Không tìm thấy nhân sự phù hợp! Nếu dùng Excel, hãy chắc chắn tệp của bạn có tiêu đề như: Mã nhân viên, Họ và Tên...");
       return;
     }
 
@@ -457,7 +444,7 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
           <div className="flex justify-center">
             <input type="file" className="text-[10px] block w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onChange={handleExcel} />
           </div>
-          {specificUsers.length > 0 && <p className="text-[10px] font-black text-emerald-500 mt-2">Đã nhận {specificUsers.length} nhân sự từ file</p>}
+          {specificUsers.length > 0 && <p className="text-[10px] font-black text-emerald-500 mt-2">✅ Đã nhận {specificUsers.length} nhân sự từ file</p>}
         </div>
       )}
 
