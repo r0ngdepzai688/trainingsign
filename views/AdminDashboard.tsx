@@ -44,6 +44,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'create' | 'acting' | 'finished' | 'users'>('acting');
   const [userTab, setUserTab] = useState<'SEV' | 'Vendor'>('SEV');
   const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -182,6 +183,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
   };
 
+  const filteredPendingAttendance = useMemo(() => {
+    if (!viewingCourse) return [];
+    const pending = viewingCourse.attendance.filter(a => a.status === 'Pending');
+    if (!searchTerm.trim()) return pending;
+    
+    const query = searchTerm.toLowerCase().trim();
+    return pending.filter(a => {
+      const u = users.find(x => x.id === a.userId);
+      if (!u) return false;
+      return u.name.toLowerCase().includes(query) || u.id.includes(query);
+    });
+  }, [viewingCourse, searchTerm, users]);
+
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#F8FAFF]">
       {toast && (
@@ -194,26 +208,62 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {viewingCourse && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-xl sm:rounded-[2rem] h-[90vh] sm:h-[80vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="p-6 border-b flex justify-between items-center">
+            <div className="p-6 border-b flex justify-between items-center bg-white sticky top-0 z-10">
               <div>
                 <h3 className="font-black text-slate-800 text-lg uppercase leading-tight">{viewingCourse.name}</h3>
                 <p className="text-[10px] font-black text-slate-400 mt-1">QUẢN LÝ NGOẠI LỆ / CHƯA KÝ</p>
               </div>
-              <button onClick={() => setViewingCourse(null)} className="p-2 bg-slate-100 rounded-xl text-slate-400">
+              <button onClick={() => { setViewingCourse(null); setSearchTerm(''); }} className="p-2 bg-slate-100 rounded-xl text-slate-400">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {viewingCourse.attendance.filter(a => a.status === 'Pending').length === 0 ? (
-                <div className="text-center py-20">
-                  <div className="text-emerald-500 flex justify-center mb-4">{ICONS.Check}</div>
-                  <p className="text-slate-400 font-bold text-sm">Tất cả đã hoàn thành ký xác nhận!</p>
+            
+            <div className="p-4 border-b bg-slate-50">
+              <div className="relative group">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                  {ICONS.Search}
+                </span>
+                <input 
+                  type="text" 
+                  placeholder="Tìm kiếm theo Tên hoặc ID nhân viên..." 
+                  className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                {searchTerm && (
+                  <button 
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300 hover:text-slate-500"
+                  >
+                    XÓA
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30">
+              {filteredPendingAttendance.length === 0 ? (
+                <div className="text-center py-20 bg-white rounded-3xl border border-dashed">
+                  <div className="text-slate-200 flex justify-center mb-4 scale-150">
+                    {searchTerm ? ICONS.Search : ICONS.Check}
+                  </div>
+                  <p className="text-slate-400 font-bold text-sm">
+                    {searchTerm ? `Không tìm thấy kết quả cho "${searchTerm}"` : 'Tất cả đã hoàn thành ký xác nhận!'}
+                  </p>
+                  {searchTerm && (
+                    <button 
+                      onClick={() => setSearchTerm('')}
+                      className="mt-4 text-blue-500 font-black text-[10px] uppercase underline"
+                    >
+                      Xóa bộ lọc tìm kiếm
+                    </button>
+                  )}
                 </div>
               ) : (
-                viewingCourse.attendance.filter(a => a.status === 'Pending').map(a => {
+                filteredPendingAttendance.map(a => {
                   const u = users.find(x => x.id === a.userId);
                   return (
-                    <div key={a.userId} className="bg-slate-50 p-4 rounded-2xl border flex flex-col gap-3">
+                    <div key={a.userId} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3 hover:border-blue-200 transition-colors">
                       <div className="flex justify-between items-start">
                         <div>
                           <div className="font-black text-slate-800 text-sm">{u?.name || 'Unknown'}</div>
@@ -225,7 +275,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <input 
                           type="text" 
                           placeholder="Lý do vắng mặt (Nghỉ phép, đi công tác...)" 
-                          className="flex-1 bg-white border rounded-xl px-3 py-2 text-[11px] font-bold outline-none focus:border-blue-500"
+                          className="flex-1 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold outline-none focus:bg-white focus:border-blue-500 transition-all"
                           defaultValue={a.reason || ''}
                           onBlur={(e) => {
                             const newReason = e.target.value;
@@ -247,8 +297,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 })
               )}
             </div>
-            <div className="p-6 border-t bg-slate-50">
-              <button onClick={() => setViewingCourse(null)} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs">XÁC NHẬN ĐÃ LƯU</button>
+            <div className="p-6 border-t bg-white">
+              <button onClick={() => { setViewingCourse(null); setSearchTerm(''); }} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.98] transition-all">XÁC NHẬN ĐÃ LƯU</button>
             </div>
           </div>
         </div>
