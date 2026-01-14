@@ -6,8 +6,24 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Font Roboto-Regular Base64 (Hỗ trợ tiếng Việt đầy đủ)
-const ROBOTO_BASE64 = "AAEAAAARAQAABAAQR0RFRg6IDu4AAAEcAAAAQkdQT1OfXpSFAAACRAAAAKpHU1VCmY6YjgAAAsgAAAC0T1MvMnaxf9sAAAGcAAAAYGNtYXABD6IuAAADWAAAAExjdnRsa0YpGAAABOAAAAA0ZnBnbV9pZzQAAAVwAAABZmdhc3AAAAAQAAABFAAAAAhnbHlmOunT3AAABqQAAA+waGVhZCHmreUAAADcAAAANmhoZWED6AOnAAABFAAAACRobXR4FsgAAAAAAfQAAABcbG9jYRF1EeYAAAZkAAAALm1heHAAEwBMAAABOAAAACBuYW1lS7M1VQAABGgAAALRcG9zdP9tAGQAAAWYAAAAIHByZXC/+AAUABQAFQAVABYAFwAYABkAGgAbABwAHQAAAAAAAgAFAAgADAAQABQAGAAcACAAJAAoAAsADAANAA4ADwAQABEAEgATABQAFAAVABUAFgAXABgAGQAaABsAHAAdAB4AHwAgACEAIgAjACQAJQAmACcAKAApACoAKwAsAC0ALgAvADAAMQAyADMANAA1ADYANwA4ADkAOgA7ADwAPQA+AD8AQABBAEIAQwBEAEUARgBHAEgASQBKAEsATABNAE4ATwBQAFEAUgBTAFQAVQBWAFcAWABZAFoAWwBcAF0AXgBfAGAAZABlAGYAZwBoAGkAagBrAGwAbQBuAG8AcABxAHIAcwB0AHUAdgB3AHgAeQB6AHsAfAB9AH4AfwCAAIEAggCDAIQAhQCGAIcAiACJAIoAiwCMAI0AjgCPAJAAkQCRAJIAkwCUAJUAlgCXAJgAmQCaAJsAnACdAJ4AnwCgAKEAogCjAKQApQCmAKcAqACpAKoAqwCsAK0ArgCvALAAscCygLMAtAC1ALcAtwC4ALkAugC7ALwAvQC+AL8AwADBAMIAwwDEAMUAxgDHAMgAyQDKAMsAzADNAM4AzwDQANEA0gDTANQA1QDWANcA2ADZANoA2wDcAN0A3gDfAOAA4QDiAOMA5ADlAOYA5wDoAOkA6gDrAOwA7QDuAO8A8ADxAPIA8wD0APUA9gD3APgA+QD6APsA/AD9AP4A/wEAAQEBAgEDAQQBBQEGAQcBCAEJAQoBCwEMAQ0BDgEPAREBEgETARQBFQEWARcBGAEZARoBGwEcAR0BHgEfASABIQEiASMBJAElASYBJwEoASkBKgErASwBLQEuAS8BMAExATIBMwE0ATUBNgE3ATgBOQE6ATsBPAE9AT4BPwFAAUEBQgFDAUQBRQFGAUcBSAFJAUoBSwFMAU0BTgFPAVABUQFvAXABcgFzAXUBdQGGAXcBbwFwAXIBcwF1AXUBhgF3AAsAAAAAANAA0AAAAAAAAAAA==";
+// Hàm hỗ trợ loại bỏ dấu tiếng Việt để tránh lỗi font trong PDF
+const removeVietnameseTones = (str: string) => {
+  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+  str = str.replace(/đ/g, "d");
+  str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+  str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+  str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+  str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+  str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+  str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+  str = str.replace(/Đ/g, "D");
+  return str;
+};
 
 interface AdminDashboardProps {
   user: User;
@@ -27,9 +43,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onCreateCourse, onUpdateCourse, onDeleteCourse, onToggleStatus 
 }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'acting' | 'finished' | 'users'>('acting');
-  const [editCourse, setEditCourse] = useState<Course | null>(null);
   const [userTab, setUserTab] = useState<'SEV' | 'Vendor'>('SEV');
-  const [pendingSearch, setPendingSearch] = useState('');
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,14 +56,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const isCompleted = course.attendance.length > 0 && 
       course.attendance.every(a => a.status === 'Signed' || (a.reason && a.reason.trim() !== ''));
     if (isCompleted) return CourseStatus.CLOSED;
-
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const startDate = new Date(course.start);
-    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(course.end);
-    endDate.setHours(0, 0, 0, 0);
-
     if (now < startDate) return CourseStatus.PLAN;
     if (now > endDate) return CourseStatus.PENDING;
     return CourseStatus.OPENING;
@@ -73,52 +83,45 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }).length;
   };
 
-  const formatDateShort = (dateStr: string) => {
-    if (!dateStr) return '--/--';
-    const d = new Date(dateStr);
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-  };
-
   const handleExportPDF = (course: Course) => {
     try {
       const doc = new jsPDF();
-      doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_BASE64);
-      doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-      doc.setFont('Roboto');
-
-      doc.setFontSize(20);
-      doc.text("BÁO CÁO KẾT QUẢ ĐÀO TẠO", 105, 20, { align: 'center' });
       
-      doc.setFontSize(11);
-      doc.text(`Tên khóa học: ${course.name}`, 14, 35);
-      doc.text(`Thời gian: ${course.start} - ${course.end}`, 14, 42);
-      doc.text(`Đối tượng: ${course.target}`, 14, 49);
+      doc.setFontSize(18);
+      doc.text(removeVietnameseTones("BAO CAO KET QUA DAO TAO"), 105, 20, { align: 'center' });
       
-      const splitContent = doc.splitTextToSize(`Nội dung: ${course.content || "N/A"}`, 180);
+      doc.setFontSize(10);
+      doc.text(removeVietnameseTones(`Ten khoa hoc: ${course.name}`), 14, 35);
+      doc.text(`Thoi gian: ${course.start} - ${course.end}`, 14, 42);
+      doc.text(`Doi tuong: ${course.target}`, 14, 49);
+      
+      const content = removeVietnameseTones(`Noi dung: ${course.content || "N/A"}`);
+      const splitContent = doc.splitTextToSize(content, 180);
       doc.text(splitContent, 14, 58);
 
       const tableData = course.attendance.map((a, i) => {
         const u = users.find(usr => usr.id === a.userId);
-        let statusText = "CHƯA KÝ";
-        if (a.status === 'Signed') statusText = "ĐÃ KÝ";
-        else if (a.reason) statusText = `VẮNG (${a.reason})`;
+        let statusText = "CHUA KY";
+        if (a.status === 'Signed') statusText = "DA KY";
+        else if (a.reason) statusText = `VANG (${removeVietnameseTones(a.reason)})`;
         
         return [
           i + 1,
           u?.id || 'N/A',
-          u?.name || 'N/A',
-          u?.part || 'N/A',
+          removeVietnameseTones(u?.name || 'N/A'),
+          removeVietnameseTones(u?.part || 'N/A'),
           statusText
         ];
       });
 
       autoTable(doc, {
         startY: 75,
-        head: [['STT', 'Mã NV', 'Họ và Tên', 'Bộ phận', 'Xác nhận']],
+        head: [['STT', 'Ma NV', 'Ho Ten', 'Bo Phan', 'Xac Nhan']],
         body: tableData,
         theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42], font: 'Roboto', fontStyle: 'bold' },
-        styles: { font: 'Roboto', fontSize: 9 },
+        headStyles: { fillColor: [15, 23, 42] },
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: { 4: { cellWidth: 50 } }, // Dành chỗ cho chữ ký
         didDrawCell: (data) => {
           if (data.column.index === 4 && data.cell.section === 'body') {
             const rowIndex = data.row.index;
@@ -132,10 +135,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         }
       });
 
-      doc.save(`Bao_cao_${course.name.replace(/\s+/g, '_')}.pdf`);
+      doc.save(`Bao_cao_${course.id}.pdf`);
       showToast("Đã tải PDF!");
     } catch (err) {
-      showToast("Lỗi khi tạo PDF!", "error");
+      console.error(err);
+      showToast("Lỗi xuất PDF!", "error");
     }
   };
 
@@ -152,17 +156,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         
         const getVal = (row: any, keys: string[]) => {
           for (const key of keys) {
-            const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
+            const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '').includes(key.toLowerCase()));
             if (foundKey) return row[foundKey];
           }
           return '';
         };
 
         const imported = jsonData.map((row: any) => ({
-          id: String(getVal(row, ['id', 'mãnhânviên', 'mnv', 'staffid', 'mânv']) || '').trim().padStart(8, '0'),
-          name: String(getVal(row, ['name', 'họvàtên', 'họtên', 'fullname']) || '').trim(),
-          part: String(getVal(row, ['part', 'bộphận', 'dept']) || 'N/A').trim(),
-          group: String(getVal(row, ['group', 'nhóm', 'team']) || 'N/A').trim(),
+          id: String(getVal(row, ['id', 'manhanvien', 'mnv', 'staffid', 'manv']) || '').trim().padStart(8, '0'),
+          name: String(getVal(row, ['name', 'hova', 'hoten', 'fullname']) || '').trim(),
+          part: String(getVal(row, ['part', 'bophan', 'dept']) || 'N/A').trim(),
+          group: String(getVal(row, ['group', 'nhom', 'team']) || 'N/A').trim(),
           role: Role.USER, 
           password: DEFAULT_PASSWORD, 
           company: userTab === 'SEV' ? Company.SAMSUG : Company.VENDOR
@@ -177,16 +181,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       } catch (err) { showToast("Lỗi file!", "error"); }
     };
     reader.readAsArrayBuffer(file);
-  };
-
-  const updateReason = (courseId: string, userId: string, reason: string) => {
-    const c = courses.find(x => x.id === courseId);
-    if (!c) return;
-    onUpdateCourse({
-      ...c,
-      attendance: c.attendance.map(a => a.userId === userId ? { ...a, reason } : a)
-    });
-    showToast("Đã cập nhật lý do");
   };
 
   const activeCourses = courses.filter(c => getCourseStatus(c) !== CourseStatus.CLOSED);
@@ -268,7 +262,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div key={c.id} className="bg-white p-4 rounded-3xl border flex items-center justify-between">
                 <div>
                   <div className="font-black text-slate-800 text-sm">{c.name}</div>
-                  <div className="text-[10px] font-bold text-slate-400">{formatDateShort(c.start)} - {formatDateShort(c.end)}</div>
+                  <div className="text-[10px] font-bold text-slate-400">{c.start} - {c.end}</div>
                 </div>
                 <button onClick={() => handleExportPDF(c)} className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg">{ICONS.Pdf}</button>
               </div>
@@ -352,25 +346,20 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(sheet);
-
         const getVal = (row: any, keys: string[]) => {
           for (const key of keys) {
-            const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
+            const foundKey = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '').includes(key.toLowerCase()));
             if (foundKey) return row[foundKey];
           }
           return '';
         };
-
         const list = jsonData.map((row: any) => ({
-          id: String(getVal(row, ['id', 'mãnhânviên', 'mnv', 'staffid', 'mânv']) || '').trim().padStart(8, '0'),
-          name: String(getVal(row, ['name', 'họvàtên', 'họtên', 'fullname']) || '').trim(),
-          part: String(getVal(row, ['part', 'bộphận', 'dept']) || 'N/A').trim(),
-          group: String(getVal(row, ['group', 'nhóm', 'team']) || 'N/A').trim(),
-          role: Role.USER, 
-          password: DEFAULT_PASSWORD, 
-          company: Company.SAMSUG
+          id: String(getVal(row, ['id', 'manhanvien', 'mnv', 'staffid', 'manv']) || '').trim().padStart(8, '0'),
+          name: String(getVal(row, ['name', 'hova', 'hoten', 'fullname']) || '').trim(),
+          part: String(getVal(row, ['part', 'bophan', 'dept']) || 'N/A').trim(),
+          group: String(getVal(row, ['group', 'nhom', 'team']) || 'N/A').trim(),
+          role: Role.USER, password: DEFAULT_PASSWORD, company: Company.SAMSUG
         })).filter(u => u.id && u.id !== '00000000' && u.name);
-
         setSpecificUsers(list);
       } catch (err) { alert('Lỗi file Excel!'); }
     };
@@ -379,41 +368,31 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
 
   const handleCreate = () => {
     if (!formData.name || !formData.start || !formData.end) {
-      alert("Vui lòng điền đủ thông tin!");
+      alert("Vui lòng điền đầy đủ thông tin!");
       return;
     }
-
     let finalUsers: User[] = [];
-    let courseTarget = Company.SAMSUG;
-
     if (targetType === 'SEV_IQC') {
       finalUsers = users.filter(u => u.group.toUpperCase().includes('IQC G'));
-      courseTarget = Company.SAMSUG;
     } else if (targetType === 'VENDOR') {
       finalUsers = users.filter(u => u.company === Company.VENDOR);
-      courseTarget = Company.VENDOR;
     } else {
       finalUsers = [...specificUsers];
-      courseTarget = Company.SAMSUG; 
     }
-
-    if (!finalUsers || finalUsers.length === 0) {
-      alert("Không tìm thấy nhân sự phù hợp! Nếu dùng Excel, hãy chắc chắn tệp của bạn có tiêu đề như: Mã nhân viên, Họ và Tên...");
+    if (finalUsers.length === 0) {
+      alert("Không tìm thấy nhân sự phù hợp!");
       return;
     }
-
-    onSubmit({ ...formData, target: courseTarget }, finalUsers);
+    onSubmit({ ...formData, target: targetType === 'VENDOR' ? Company.VENDOR : Company.SAMSUG }, finalUsers);
   };
 
   return (
     <div className="bg-white rounded-3xl p-6 shadow-sm border space-y-5">
       <h4 className="font-black text-slate-800 text-lg uppercase tracking-tight">Khởi tạo đào tạo</h4>
-      
       <div className="space-y-1">
         <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Tên khóa học</label>
         <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm border focus:border-blue-300 transition-all" placeholder="Nhập tên khóa học..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
       </div>
-
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Bắt đầu</label>
@@ -424,36 +403,26 @@ const CourseForm = ({ users, onSubmit }: { users: User[], onSubmit: (c: Course, 
           <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-xs" value={formData.end} onChange={e => setFormData({...formData, end: e.target.value})} />
         </div>
       </div>
-
       <div className="space-y-1">
         <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Đối tượng đào tạo</label>
-        <select 
-          className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-sm border focus:border-blue-300 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M5%207L10%2012L15%207%22%20stroke%3D%22%2364748B%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E')] bg-no-repeat bg-[right_1rem_center]" 
-          value={targetType} 
-          onChange={e => setTargetType(e.target.value as any)}
-        >
+        <select className="w-full p-4 bg-slate-50 rounded-2xl font-bold text-sm border focus:border-blue-300 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M5%207L10%2012L15%207%22%20stroke%3D%22%2364748B%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E')] bg-no-repeat bg-[right_1rem_center]" 
+          value={targetType} onChange={e => setTargetType(e.target.value as any)}>
           <option value="SEV_IQC">Samsung IQC (Nhóm IQC G)</option>
           <option value="VENDOR">Vendor (Toàn bộ nhà thầu)</option>
           <option value="EXCEL">Danh sách riêng (Tải tệp Excel)</option>
         </select>
       </div>
-
       {targetType === 'EXCEL' && (
         <div className="p-5 border-2 border-dashed border-slate-200 rounded-2xl text-center bg-slate-50/50">
-          <span className="text-[10px] font-black text-slate-400 block mb-3 uppercase tracking-wider">GÁN DANH SÁCH RIÊNG (EXCEL)</span>
-          <div className="flex justify-center">
-            <input type="file" className="text-[10px] block w-full text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" onChange={handleExcel} />
-          </div>
-          {specificUsers.length > 0 && <p className="text-[10px] font-black text-emerald-500 mt-2">✅ Đã nhận {specificUsers.length} nhân sự từ file</p>}
+          <input type="file" className="text-[10px] w-full" onChange={handleExcel} />
+          {specificUsers.length > 0 && <p className="text-[10px] font-black text-emerald-500 mt-2">✅ Đã nhận {specificUsers.length} nhân sự</p>}
         </div>
       )}
-
       <div className="space-y-1">
         <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Nội dung cam kết</label>
-        <textarea rows={3} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm border focus:border-blue-300 transition-all" placeholder="Nhập nội dung cam kết đào tạo..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
+        <textarea rows={3} className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm border focus:border-blue-300 transition-all" placeholder="Nhập nội dung..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} />
       </div>
-
-      <button onClick={handleCreate} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl active:scale-95 transition-all uppercase text-xs tracking-widest">BẮT ĐẦU TRIỂN KHAI</button>
+      <button onClick={handleCreate} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl uppercase text-xs tracking-widest active:scale-95 transition-all">BẮT ĐẦU TRIỂN KHAI</button>
     </div>
   );
 };

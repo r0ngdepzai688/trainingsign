@@ -40,36 +40,28 @@ const App: React.FC = () => {
     if (users.some(u => u.id === newUser.id)) return alert("ID này đã tồn tại!");
     const updatedUsers = [...users, newUser];
     setUsers(updatedUsers);
-    
-    setCourses(prev => prev.map(c => {
-      if (c.target === newUser.company && !c.attendance.some(a => a.userId === newUser.id)) {
-        // Chỉ tự động gán nếu khóa học đó đang để chế độ "Toàn bộ" (logic này có thể mở rộng thêm field trong Course nếu cần)
-        return { ...c, attendance: [...c.attendance, { userId: newUser.id, status: 'Pending' }] };
-      }
-      return c;
-    }));
     alert("Đăng ký thành công!");
   };
 
   const handleCreateCourse = (newCourse: Course, specificUsers?: User[]) => {
     let targetAttendance: AttendanceRecord[] = [];
     
+    // Logic loại bỏ Admin
+    const isNotAdmin = (u: User) => u.role !== Role.ADMIN;
+
     if (specificUsers && specificUsers.length > 0) {
-      // 1. Cập nhật danh sách users hệ thống nếu có user mới trong danh sách Excel
       setUsers(prev => {
         const existingIds = new Set(prev.map(u => u.id));
         const newOnes = specificUsers.filter(u => !existingIds.has(u.id));
         return [...prev, ...newOnes];
       });
 
-      // 2. Gán attendance cho danh sách được chỉ định
-      targetAttendance = specificUsers.map(u => ({
+      targetAttendance = specificUsers.filter(isNotAdmin).map(u => ({
         userId: u.id,
         status: 'Pending'
       }));
     } else {
-      // 3. Gán cho toàn bộ công ty (mặc định cũ)
-      const targetUsers = users.filter(u => u.company === newCourse.target);
+      const targetUsers = users.filter(u => u.company === newCourse.target && isNotAdmin(u));
       targetAttendance = targetUsers.map(u => ({
         userId: u.id,
         status: 'Pending'
@@ -78,7 +70,7 @@ const App: React.FC = () => {
 
     const courseWithAttendance = { ...newCourse, attendance: targetAttendance };
     setCourses(prev => [...prev.filter(x => x.id !== courseWithAttendance.id), courseWithAttendance]);
-    alert(specificUsers ? `Đã gán khóa học cho ${specificUsers.length} nhân sự theo danh sách!` : "Khóa học đã được gán cho toàn bộ nhân viên!");
+    alert(`Đã triển khai khóa học cho ${targetAttendance.length} nhân sự (Đã loại bỏ Admin).`);
   };
 
   const handleUpdateCourse = (updatedCourse: Course) => {
