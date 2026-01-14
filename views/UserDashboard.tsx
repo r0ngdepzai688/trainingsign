@@ -14,25 +14,18 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, courses, confirmati
   const [isAgreed, setIsAgreed] = useState(false);
   const [isSigned, setIsSigned] = useState(false);
 
+  // Logic lọc khóa học cần ký
   const pending = courses.filter(c => {
-    // 1. Kiểm tra đối tượng (Samsung/Vendor)
     const isTarget = c.target === user.company;
-    
-    // 2. Kiểm tra trạng thái và thời gian (Chuẩn hóa về 00:00:00)
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    
     const startDate = new Date(c.start);
-    startDate.setHours(0, 0, 0, 0);
-    
     const endDate = new Date(c.end);
-    endDate.setHours(0, 0, 0, 0);
-
+    
+    // Đã ký chưa? (Kiểm tra trong confirmations từ Firebase)
+    const signed = confirmations.some(conf => conf.courseId === c.id && conf.userId === user.id);
     const isOpening = c.isEnabled && now >= startDate && now <= endDate;
 
-    // 3. Kiểm tra xem đã ký chưa
-    const signed = confirmations.some(conf => conf.courseId === c.id && conf.userId === user.id);
-    
     return isTarget && isOpening && !signed;
   });
 
@@ -43,7 +36,6 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, courses, confirmati
     if (!ctx) return;
     let drawing = false;
 
-    // Fix for high DPI screens
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
@@ -69,10 +61,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, courses, confirmati
       const rect = canvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      return {
-        x: clientX - rect.left,
-        y: clientY - rect.top
-      };
+      return { x: clientX - rect.left, y: clientY - rect.top };
     };
 
     const draw = (e: any) => {

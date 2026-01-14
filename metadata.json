@@ -2,6 +2,14 @@
   "name": "IQC Training Pro",
   "description": "Hệ thống xác nhận đào tạo online cho nhân viên IQC. Hỗ trợ ký xác nhận điện tử và quản lý khóa học chuyên nghiệp.",
   "requestFramePermissions": [
-    "camera"
-  ]
+    "camera",
+    "microphone"
+  ],
+  "android": {
+    "permissions": [
+      "android.permission.INTERNET",
+      "android.permission.CAMERA",
+      "android.permission.WRITE_EXTERNAL_STORAGE"
+    ]
+  }
 }

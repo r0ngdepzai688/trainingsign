@@ -1,23 +1,18 @@
+
 {
   "name": "iqc-training-pro",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
+  "version": "1.0.0",
+  "description": "Hệ thống xác nhận đào tạo IQC Pro",
+  "main": "index.js",
   "dependencies": {
-    "react": "^19.2.3",
-    "xlsx": "^0.18.5",
-    "exceljs": "4.4.0",
-    "react-dom": "^19.2.3"
+    "@capacitor/android": "^5.0.0",
+    "@capacitor/core": "^5.0.0",
+    "firebase": "^10.8.0",
+    "lucide-react": "^0.344.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@capacitor/cli": "^5.0.0"
   }
 }
